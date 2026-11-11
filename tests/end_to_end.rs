@@ -1,6 +1,6 @@
 //! Runs a real `lx daemon` against fixture services and checks the contract end to end:
 //! dependencies, the gateway's sign-in, header swap, Origin check, streaming,
-//! Upgrade, restart policy, `lx check`, and shutdown.
+//! Upgrade, restart policy, `lx check`, the agents switch, and shutdown.
 
 use std::fs;
 use std::io::{Read, Write};
@@ -159,6 +159,9 @@ ui = "/"
 state = "/api/state"
 events = "/api/events"
 
+[service.alpha.agents]
+skills = "skills"
+
 [service.beta]
 name = "Beta"
 level = 1
@@ -193,6 +196,13 @@ state = "/api/state"
         ),
     )
     .unwrap();
+    let hello = project.join("skills/hello");
+    fs::create_dir_all(&hello).unwrap();
+    fs::write(hello.join("SKILL.md"), "---\nname: hello\ndescription: Say hello to Alpha.\n---\n\nRun `svc.py state`.\n").unwrap();
+    // An agent's skill folder (HOME is the test root), with a skill of the user's own.
+    let mine = root.join(".claude/skills/mine");
+    fs::create_dir_all(&mine).unwrap();
+    fs::write(mine.join("SKILL.md"), "---\nname: mine\ndescription: The user's own skill.\n---\n").unwrap();
     let plain = root.join("plain");
     fs::create_dir_all(&plain).unwrap();
     fs::write(plain.join("launchx.toml"), "launchx = \"0.1\"\n\n[service.sleeper]\nname = \"Sleeper\"\nrun = [\"sleep\", \"300\"]\n").unwrap();
@@ -349,6 +359,45 @@ fn launcher_end_to_end() {
     let report: serde_json::Value = serde_json::from_slice(&sloppy.stdout).unwrap();
     let failed: Vec<&str> = report["results"].as_array().unwrap().iter().filter(|r| r["ok"] == false).map(|r| r["check"].as_str().unwrap()).collect();
     assert_eq!(failed, ["rejects a request without the token", "rejects a wrong token"], "{report}");
+
+    // Agents: every service starts hidden; nothing is published.
+    let agent_dir = env.root.join(".claude/skills");
+    let agents_json = |env: &Env| -> serde_json::Value { serde_json::from_str(&env.lx_ok(&["agents", "--json"])).unwrap() };
+    assert_eq!(env.service("alpha")["agents"]["discoverable"], false);
+    assert_eq!(env.service("alpha")["agents"]["skills"][0], "hello");
+    assert!(agents_json(&env)["apps"].as_array().unwrap().is_empty());
+    assert!(env.lx_ok(&["agents"]).contains("No app is discoverable"));
+    assert!(agent_dir.join("launchx").symlink_metadata().is_err());
+
+    // Switching alpha on lists it for agents and publishes its skill and LaunchX's own.
+    let on = env.lx_ok(&["agents", "on", "alpha"]);
+    assert!(on.contains("alpha is now discoverable by agents"), "{on}");
+    assert!(!env.lx(&["agents", "on", "nosuch"]).status.success());
+    let index = agents_json(&env);
+    let apps = index["apps"].as_array().unwrap();
+    assert_eq!(apps.len(), 1, "{index}");
+    assert_eq!(apps[0]["id"], "alpha");
+    assert_eq!(apps[0]["status"], "running");
+    assert_eq!(apps[0]["skills"][0]["name"], "hello");
+    assert!(agent_dir.join("hello/SKILL.md").is_file());
+    let own = fs::read_to_string(agent_dir.join("launchx/SKILL.md")).unwrap();
+    assert!(own.contains("## Alpha (`alpha`)") && own.contains("`hello`") && !own.contains("Beta"), "{own}");
+    assert!(env.lx_ok(&["ls"]).lines().any(|l| l.starts_with("alpha") && l.contains(" on ")));
+
+    // The page's switch uses the same API, and needs the page's own Origin.
+    let launcher_origin = format!("http://{}", env.host("launchx"));
+    let switch_beta = |headers: &[(&str, &str)]| request(gw, "POST", &env.host("launchx"), "/api/services/beta/agents", headers, r#"{"discoverable": true}"#);
+    assert_eq!(switch_beta(&[("Cookie", &launcher_cookie)]).status, 403);
+    let switched = switch_beta(&[("Cookie", &launcher_cookie), ("Origin", &launcher_origin), ("Content-Type", "application/json")]);
+    assert_eq!(switched.status, 200, "{}", switched.body);
+    assert_eq!(env.service("beta")["agents"]["discoverable"], true);
+    assert!(fs::read_to_string(agent_dir.join("launchx/SKILL.md")).unwrap().contains("## Beta (`beta`)"));
+
+    // Switching off withdraws what LaunchX published, and nothing else.
+    env.lx_ok(&["agents", "off", "alpha", "beta"]);
+    assert!(agents_json(&env)["apps"].as_array().unwrap().is_empty());
+    assert!(agent_dir.join("hello").symlink_metadata().is_err() && agent_dir.join("launchx").symlink_metadata().is_err());
+    assert!(agent_dir.join("mine/SKILL.md").is_file());
 
     // Stopping alpha stops beta first; run files go away.
     let stopped = env.lx_ok(&["stop", "alpha"]);

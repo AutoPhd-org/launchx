@@ -51,8 +51,19 @@ LaunchX is the only app: services stay in the browser, where they get tabs, book
 | `lx check <id>` | Start a temporary copy on a spare port and test it against the level it claims. |
 | `lx state` | The launcher's full state document as JSON. |
 | `lx up` / `lx down` | Register or remove the launcher as a login service, and start or stop it. |
+| `lx agents` / `lx agents on <id>` / `lx agents off <id>` | What your AI agents can discover, and the switch for each service (see below). |
 
 Every page of the launcher is also an API: `GET /api/state`, `GET /api/events` (server-sent events), `POST /api/services/<id>/start`. Programs reach it at `http://127.0.0.1:7600` with the token in `~/.launchx/run/launchx.json`.
+
+## Agents
+
+Each service has a **Discoverable by agents** switch: on its card, in the menu bar, or `lx agents on|off <id>`. It starts off. While a service is on:
+
+- `lx agents` (and `--json`) lists it with its CLI, state, run file and skills;
+- its skills (`[service.<id>.agents] skills = "…"` in its manifest) are linked into `~/.claude/skills` and `~/.agents/skills`, whichever exist (`agent_skill_dirs` in `config.toml`);
+- a generated `launchx` skill tells your agent which apps it may use and how, and to leave the others alone.
+
+Switching a service off removes what LaunchX put there; LaunchX never touches skills it did not create. The switch controls what agents are told, not what they can reach: an agent runs as you, so it could still find a hidden service if it went looking.
 
 ## Files
 
@@ -63,7 +74,8 @@ config.toml        gateway_port = 7600, backoff_unit_ms = 1000
 services/          links to registered manifests
 run/<id>.json      URL, token and pid of each running service (mode 0600)
 logs/<id>.log      captured output, rotated at 5 MB
-state.json         assigned ports and tokens, and the session secret (mode 0600)
+agents/skills/     skills published to your agents, linked from their skill folders
+state.json         assigned ports and tokens, the session secret, and the agents switches (mode 0600)
 ```
 
 ## Development
@@ -72,7 +84,7 @@ state.json         assigned ports and tokens, and the session secret (mode 0600)
 cargo test          # unit tests and an end-to-end run against fixture services
 ```
 
-The end-to-end test starts a real daemon on a spare port with fixture services and covers dependency order, sign-in, the token swap, the Origin check, streaming and Upgrade through the gateway, restart back-off, `lx check`, and shutdown.
+The end-to-end test starts a real daemon on a spare port with fixture services and covers dependency order, sign-in, the token swap, the Origin check, streaming and Upgrade through the gateway, restart back-off, `lx check`, the agents switch, and shutdown.
 
 ## License
 

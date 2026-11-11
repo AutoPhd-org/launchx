@@ -60,6 +60,11 @@ impl Home {
     pub fn lock_path(&self) -> PathBuf {
         self.root.join("daemon.lock")
     }
+    /// Where LaunchX keeps the skills it publishes to agents (contract §10.7).
+    pub fn agent_skills_dir(&self) -> PathBuf {
+        let root = std::path::absolute(&self.root).unwrap_or_else(|_| self.root.clone());
+        root.join("agents").join("skills")
+    }
 
     pub fn config(&self) -> anyhow::Result<Config> {
         match fs::read_to_string(self.config_path()) {
@@ -124,11 +129,18 @@ pub struct Config {
     pub gateway_port: u16,
     /// Unit of the restart back-off (1, 2, 4 … 60 units).
     pub backoff_unit_ms: u64,
+    /// Agents' skill folders that LaunchX publishes skills into (contract §10.7).
+    /// A folder that does not exist is skipped.
+    pub agent_skill_dirs: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { gateway_port: DEFAULT_GATEWAY_PORT, backoff_unit_ms: 1000 }
+        Config {
+            gateway_port: DEFAULT_GATEWAY_PORT,
+            backoff_unit_ms: 1000,
+            agent_skill_dirs: vec!["~/.claude/skills".into(), "~/.agents/skills".into()],
+        }
     }
 }
 
@@ -141,6 +153,9 @@ impl Config {
     }
     pub fn service_url(&self, id: &str) -> String {
         format!("http://{}/", self.gateway_host(&format!("{id}.localhost")))
+    }
+    pub fn agent_skill_dirs(&self) -> Vec<PathBuf> {
+        self.agent_skill_dirs.iter().map(|dir| crate::manifest::expand_tilde(dir)).collect()
     }
 }
 
@@ -158,6 +173,9 @@ pub struct Persisted {
     /// Services the user started and has not stopped; started again with the launcher.
     #[serde(default)]
     pub running: std::collections::BTreeSet<String>,
+    /// Services the user made discoverable by agents (contract §10.7). Off by default.
+    #[serde(default)]
+    pub agents: std::collections::BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

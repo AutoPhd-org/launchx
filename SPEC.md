@@ -118,6 +118,22 @@ There is no `{token}` placeholder: a token in the argument list would be visible
 
 A service's repository and manifest MUST NOT need private data to work. Names of a person's machines, organisation or accounts belong in a configuration file the service reads from a documented location outside its repository (for example `~/.config/<service>/`). The manifest stays generic and public; the private file stays on the machine. vmc's site profile (Appendix A) is the worked example.
 
+### 4.7 Agent fields
+
+The optional `[service.<id>.agents]` table says what the service offers LLM agents beyond its CLI and state. Paths are relative to the manifest.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `skills` | path | One skill folder (a folder holding `SKILL.md`) or a folder of them, in the [Agent Skills](https://agentskills.io) format. A skill's `name` and `description` come from its front matter. The name `launchx` is reserved. |
+| `docs` | path | A document for agents: the shape of the state document and the actions (§7). |
+
+```toml
+[service.rmd.agents]
+skills = "plugins/schedule-everything/skills"
+```
+
+The manifest says what is on offer. Whether agents are told about it is the user's choice (§10.7).
+
 ## 5. Process contract (level 1)
 
 ### 5.1 Foreground
@@ -274,7 +290,7 @@ A command whose job is "start it and open the page" (for example `rmd web`, or `
 
 ### 8.5 Agents
 
-This section is not normative. A CLI with `--json` and an open state document are what let an AI agent use a service without scraping a page. Skills and plugins built on the CLI are a third client beside the GUI and the person at the terminal.
+This section is not normative. A CLI with `--json` and an open state document are what let an AI agent use a service without scraping a page. Skills built on the CLI (§4.7) are a third client beside the GUI and the person at the terminal. The user decides which services agents are told about (§10.7).
 
 ## 9. Dependencies
 
@@ -297,11 +313,14 @@ Version constraints between services are not part of 0.1.
 `$LAUNCHX_HOME`, by default `~/.launchx`, mode `0700`:
 
 ```
-config.toml          launcher settings: gateway_port (7600), backoff_unit_ms (1000)
+config.toml          launcher settings: gateway_port (7600), backoff_unit_ms (1000),
+                     agent_skill_dirs (["~/.claude/skills", "~/.agents/skills"])
 services/            registered manifests (links or files)
 run/<id>.json        one per running service, mode 0600
 logs/<id>.log        captured output, rotated
-state.json           assigned ports and tokens, mode 0600
+agents/skills/       skills published to agents (§10.7)
+state.json           assigned ports and tokens, which services the user left running
+                     and which are discoverable by agents; mode 0600
 ```
 
 The launcher runs services with the `PATH` of the user's login shell, not the bare one that launchd or systemd provide.
@@ -373,7 +392,9 @@ GET  /api/events
 POST /api/services/{id}/start
 POST /api/services/{id}/stop
 POST /api/services/{id}/restart
+POST /api/services/{id}/agents         body {"discoverable": true|false} (§10.7)
 GET  /api/services/{id}/logs?tail=200
+GET  /api/agents                       what agents are told (§10.7)
 POST /api/link                         one-time sign-in link; body {"service": id?, "next": path?}
 POST /api/reload
 POST /api/shutdown                     bearer token only
@@ -399,7 +420,8 @@ Its state document:
       "requires": [],
       "since": "2026-11-10T16:40:02Z",
       "restarts": 0,
-      "last_exit": null
+      "last_exit": null,
+      "agents": { "discoverable": false, "skills": [] }
     }
   ]
 }
@@ -418,6 +440,8 @@ Its CLI:
 | `lx add <path>` / `lx rm <id>` | Register or unregister a manifest. |
 | `lx check <id>` | Verify the service against its declared level. |
 | `lx state` | Print the launcher's state document. |
+| `lx agents` | List the services agents can discover (§10.7). |
+| `lx agents on <id>…` / `lx agents off <id>…` | Make services discoverable by agents, or hide them. |
 
 Every command that reads takes `--json`.
 
@@ -430,6 +454,20 @@ Every command that reads takes `--json`.
 | 1 | Stays in the foreground. Binds the assigned host and port. Rejects a request with no token and one with a wrong token. Health answers in time with the right `id`. Exits 0 on SIGTERM within `stop_timeout`. |
 | 2 | State endpoint returns a JSON object and no value that equals the token. `<cli> state` prints the same top-level keys. `<cli> --version` matches health. If `events` is declared, the stream opens and sends a heartbeat. |
 
+### 10.7 Agent discovery
+
+Each service has a switch, **discoverable by agents**, that the user sets on its card in the launcher's page, in the app's menu, or with `lx agents on|off <id>`. It is off for every service until the user turns it on, and the launcher keeps it in `state.json`. Unregistering a service forgets it.
+
+For each service that is switched on, the launcher:
+
+- **Lists it** in `lx agents` and `GET /api/agents`, with its id, name, description, level, status, CLI, `ui`, state and event paths, run file, `docs`, and each skill's name, description and path. Services that are switched off are not listed.
+- **Publishes its skills** (§4.7) into each folder in `agent_skill_dirs` that exists. A folder that does not exist is skipped, not created.
+- **Names it in the `launchx` skill**, which the launcher writes while at least one service is switched on. The skill tells an agent which apps it may use and how: each app's CLI, `<cli> state`, run file and skills. It asks the agent to leave every other app alone unless the user names it.
+
+Every published skill is a link from the agent's folder to `$LAUNCHX_HOME/agents/skills/<name>`. The launcher removes only links that point there, so switching everything off leaves nothing of LaunchX's in an agent's folder. An entry it did not make is never replaced; the clash is reported in the state document's `errors`, as is a skill name two services share (the first keeps it).
+
+The switch decides what agents are told, not what they can reach. An agent runs as the user, so it can still read run files and call a service it was not told about (§11).
+
 ## 11. Security model
 
 | Threat | Handled by |
@@ -441,7 +479,7 @@ Every command that reads takes `--json`.
 | One service reaching into another | Tokens are per service; only declared dependencies receive one (§9). |
 | Other devices on the network | Everything binds to loopback by default. |
 
-Out of scope: a hostile process running as the same user. It can read the run files, as it can read everything else the user owns.
+Out of scope: a hostile process running as the same user. It can read the run files, as it can read everything else the user owns. This includes an AI agent the user runs: hiding a service from agents (§10.7) keeps it out of what they are told, and a well-behaved agent stays away, but only running the agent as another user, or in a sandbox, keeps it out.
 
 ## 12. Not in 0.1
 
@@ -511,4 +549,5 @@ Choices this draft makes that would be expensive to reverse. Feedback welcome.
 1. **The gateway is mandatory for browsers.** Services never implement browser auth; they check one header. The cost is that the launcher must contain a streaming reverse proxy. The gain is that security is written once, URLs are stable, and remote access can later be added for every service at once.
 2. **Standalone instances are not adopted.** Convenience commands hand over to the launcher instead (§8.4). A copy started by hand before the launcher is running stays outside it.
 3. **Events are recommended, not required, at level 2.** Polling with an `ETag` is accepted.
-4. **Smaller choices.** `~/.launchx` as the home directory instead of XDG or `~/Library`; port 7600 for the gateway; several services per manifest file.
+4. **Agents are told nothing until the user says so.** Discovery is off for every service by default (§10.7), and a service's manifest cannot turn it on. Publishing into agents' skill folders by link, rather than by asking each agent to read `lx agents`, is what makes the skills show up in an agent's skill list.
+5. **Smaller choices.** `~/.launchx` as the home directory instead of XDG or `~/Library`; port 7600 for the gateway; several services per manifest file.

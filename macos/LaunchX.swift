@@ -26,8 +26,15 @@ struct ServiceInfo: Decodable, Identifiable, Equatable {
     let error: String?
     let ui: String?
     let required_by: [String]
+    let agents: AgentsInfo?
 
     var active: Bool { ["running", "starting", "waiting"].contains(status) }
+}
+
+/// Whether agents are told about a service (contract §10.7).
+struct AgentsInfo: Decodable, Equatable {
+    let discoverable: Bool
+    let skills: [String]
 }
 
 private struct StateDocument: Decodable {
@@ -88,6 +95,10 @@ enum Daemon {
 
     static func services() async throws -> [ServiceInfo] {
         try JSONDecoder().decode(StateDocument.self, from: try await call("GET", "/api/state")).services
+    }
+
+    static func setDiscoverable(_ id: String, _ on: Bool) async throws {
+        _ = try await call("POST", "/api/services/\(id)/agents", body: ["discoverable": on])
     }
 
     static func act(_ id: String, _ action: String) async throws {
@@ -187,6 +198,13 @@ final class Model: ObservableObject {
         }
         Task {
             do { try await Daemon.act(service.id, action) } catch { showError(error) }
+            await refresh()
+        }
+    }
+
+    func setDiscoverable(_ service: ServiceInfo, _ on: Bool) {
+        Task {
+            do { try await Daemon.setDiscoverable(service.id, on) } catch { showError(error) }
             await refresh()
         }
     }
@@ -454,6 +472,13 @@ struct MenuContent: View {
                     }
                     if service.status == "running" {
                         Button("Restart") { model.perform(service, "restart") }
+                    }
+                    if let agents = service.agents {
+                        Divider()
+                        Toggle("Discoverable by Agents", isOn: Binding(
+                            get: { agents.discoverable },
+                            set: { model.setDiscoverable(service, $0) }
+                        ))
                     }
                 } label: {
                     Text("\(dot(service))  \(service.name)")

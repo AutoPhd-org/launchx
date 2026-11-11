@@ -52,6 +52,8 @@ pub struct ServiceDef {
     pub icon: Option<String>,
     #[serde(default)]
     pub http: Option<HttpDef>,
+    #[serde(default)]
+    pub agents: Option<AgentsDef>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -67,6 +69,18 @@ pub struct HttpDef {
     pub events: Option<String>,
     #[serde(default)]
     pub port: Option<u16>,
+}
+
+/// `[service.<id>.agents]`: what the service offers LLM agents (contract §4.7).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AgentsDef {
+    /// A skill folder (holding SKILL.md), or a folder of them.
+    #[serde(default)]
+    pub skills: Option<String>,
+    /// A document for agents: the state document's shape and the actions.
+    #[serde(default)]
+    pub docs: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -112,6 +126,11 @@ impl Service {
             None => self.dir.clone(),
         }
     }
+
+    /// A path from the manifest, resolved against the manifest's directory.
+    pub fn path(&self, path: &str) -> PathBuf {
+        self.dir.join(expand_tilde(path))
+    }
 }
 
 pub fn valid_id(id: &str) -> bool {
@@ -122,7 +141,7 @@ pub fn valid_id(id: &str) -> bool {
         && bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
 }
 
-fn expand_tilde(path: &str) -> PathBuf {
+pub fn expand_tilde(path: &str) -> PathBuf {
     match path.strip_prefix("~/") {
         Some(rest) => crate::home::home_dir().join(rest),
         None => PathBuf::from(path),
@@ -173,6 +192,11 @@ pub fn parse(file: &Path, entry: &Path) -> anyhow::Result<Vec<Service>> {
                 if !path.starts_with('/') || path.starts_with("/.launchx") {
                     return Err(problem(format!("http path {path:?} must start with '/' and not use /.launchx")));
                 }
+            }
+        }
+        if let Some(agents) = &def.agents {
+            if [&agents.skills, &agents.docs].into_iter().flatten().any(|path| path.trim().is_empty()) {
+                return Err(problem("agents paths must not be empty".into()));
             }
         }
         if def.level == 2 && def.cli.is_none() {
@@ -355,6 +379,7 @@ mod tests {
             "launchx = \"0.1\"\n[service.a]\nname=\"A\"\nrun=[\"a\"]\ntypo=1\n",
             "launchx = \"0.1\"\n[service.a]\nname=\"A\"\nrun=[\"a\"]\nlevel=2\n",
             "launchx = \"0.1\"\n[service.a]\nname=\"A\"\nrun=[\"a\"]\n[service.a.http]\nui=\"/.launchx/x\"\n",
+            "launchx = \"0.1\"\n[service.a]\nname=\"A\"\nrun=[\"a\"]\n[service.a.agents]\nskill=\"s\"\n",
         ] {
             let file = write(&dir, bad);
             assert!(parse(&file, &file).is_err(), "accepted: {bad}");
@@ -380,6 +405,7 @@ mod tests {
             homepage: None,
             icon: None,
             http: None,
+            agents: None,
         }
     }
 

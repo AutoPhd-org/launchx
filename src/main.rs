@@ -1,5 +1,6 @@
 //! `lx`: the LaunchX launcher — daemon, gateway and command line in one executable.
 
+mod agents;
 mod check;
 mod client;
 mod gateway;
@@ -78,6 +79,27 @@ enum Command {
     },
     /// Print the launcher's state document
     State,
+    /// What LLM agents can discover: list those apps, or switch apps on or off
+    Agents {
+        #[command(subcommand)]
+        action: Option<AgentsAction>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentsAction {
+    /// Make services discoverable by agents: list them and publish their skills
+    On {
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Hide services from agents and withdraw their skills
+    Off {
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -120,6 +142,9 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
             println!("{}", serde_json::to_string_pretty(&state)?);
             Ok(ExitCode::SUCCESS)
         }
+        Command::Agents { action: None, json } => list_agents(home, json).await,
+        Command::Agents { action: Some(AgentsAction::On { ids }), .. } => switch_agents(home, ids, true).await,
+        Command::Agents { action: Some(AgentsAction::Off { ids }), .. } => switch_agents(home, ids, false).await,
     }
 }
 
@@ -236,14 +261,18 @@ fn table(rows: Vec<Vec<String>>) {
 async fn ls(home: Home, as_json: bool) -> anyhow::Result<ExitCode> {
     let Some(daemon) = Daemon::find(&home) else {
         let (services, errors) = manifest::load_registry(&home);
+        let discoverable = home.load_state()?.agents;
         if as_json {
-            let list: Vec<Value> = services.iter().map(|s| json!({ "id": s.id, "name": s.def.name, "status": "unknown", "error": s.error })).collect();
+            let list: Vec<Value> = services
+                .iter()
+                .map(|s| json!({ "id": s.id, "name": s.def.name, "status": "unknown", "error": s.error, "agents": { "discoverable": discoverable.contains(&s.id) } }))
+                .collect();
             println!("{}", serde_json::to_string_pretty(&json!({ "running": false, "services": list, "errors": errors }))?);
             return Ok(ExitCode::SUCCESS);
         }
         println!("LaunchX is not running. Start it with `lx up`.\n");
-        let mut rows = vec![vec!["ID".into(), "NAME".into(), "MANIFEST".into()]];
-        rows.extend(services.iter().map(|s| vec![s.id.clone(), s.def.name.clone(), s.manifest.display().to_string()]));
+        let mut rows = vec![vec!["ID".into(), "NAME".into(), "AGENTS".into(), "MANIFEST".into()]];
+        rows.extend(services.iter().map(|s| vec![s.id.clone(), s.def.name.clone(), on_off(discoverable.contains(&s.id)), s.manifest.display().to_string()]));
         table(rows);
         for error in errors {
             eprintln!("! {error}");
@@ -259,18 +288,113 @@ async fn ls(home: Home, as_json: bool) -> anyhow::Result<ExitCode> {
     if services.is_empty() {
         println!("No services registered. Add one with `lx add <path>`.");
     } else {
-        let mut rows = vec![vec!["ID".into(), "STATUS".into(), "HEALTH".into(), "VERSION".into(), "PORT".into(), "SUMMARY".into()]];
+        let mut rows =
+            vec![vec!["ID".into(), "STATUS".into(), "HEALTH".into(), "VERSION".into(), "PORT".into(), "AGENTS".into(), "SUMMARY".into()]];
         for s in &services {
             let summary = match s.get("error").and_then(Value::as_str) {
                 Some(error) => error.to_string(),
                 None => s.get("summary").or(s.get("detail")).and_then(Value::as_str).unwrap_or("").to_string(),
             };
-            rows.push(vec![text(s, "id"), text(s, "status"), text(s, "health"), text(s, "version"), text(s, "port"), summary]);
+            let agents = on_off(s["agents"]["discoverable"].as_bool().unwrap_or(false));
+            rows.push(vec![text(s, "id"), text(s, "status"), text(s, "health"), text(s, "version"), text(s, "port"), agents, summary]);
         }
         table(rows);
     }
     for error in state["errors"].as_array().into_iter().flatten() {
         eprintln!("! {}", error.as_str().unwrap_or(""));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn on_off(on: bool) -> String {
+    (if on { "on" } else { "off" }).into()
+}
+
+// --- Agents (§10.7) -----------------------------------------------------------
+
+fn tilde(path: &std::path::Path) -> String {
+    match path.strip_prefix(home::home_dir()) {
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => path.display().to_string(),
+    }
+}
+
+async fn list_agents(home: Home, as_json: bool) -> anyhow::Result<ExitCode> {
+    let config = home.config()?;
+    let index = match Daemon::find(&home) {
+        Some(daemon) => daemon.get("/api/agents").await?,
+        None => {
+            let (services, _) = manifest::load_registry(&home);
+            let mut index = agents::index(&home, &config, &services, &home.load_state()?.agents, |_| None);
+            index["launcher"] = json!({ "running": false });
+            index
+        }
+    };
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&index)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    let apps = index["apps"].as_array().cloned().unwrap_or_default();
+    if apps.is_empty() {
+        println!("No app is discoverable by agents. Switch one on with: lx agents on <id>");
+        return Ok(ExitCode::SUCCESS);
+    }
+    println!("Apps that agents can discover:\n");
+    let mut rows = vec![vec!["ID".into(), "NAME".into(), "STATUS".into(), "CLI".into(), "SKILLS".into()]];
+    for app in &apps {
+        let skills: Vec<&str> = app["skills"].as_array().into_iter().flatten().filter_map(|s| s["name"].as_str()).collect();
+        let status = app["status"].as_str().unwrap_or(if index["launcher"]["running"] == true { "—" } else { "LaunchX not running" });
+        rows.push(vec![text(app, "id"), text(app, "name"), status.into(), text(app, "cli"), if skills.is_empty() { "—".into() } else { skills.join(", ") }]);
+    }
+    table(rows);
+    let folders: Vec<String> = config.agent_skill_dirs().iter().filter(|d| d.is_dir()).map(|d| tilde(d)).collect();
+    if folders.is_empty() {
+        println!("\nNo agent skill folder exists yet ({}); set agent_skill_dirs in {}.", config.agent_skill_dirs.join(", "), tilde(&home.config_path()));
+    } else {
+        println!("\nAgents find them through the `launchx` skill in {}.", folders.join(" and "));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn switch_agents(home: Home, ids: Vec<String>, on: bool) -> anyhow::Result<ExitCode> {
+    let problems: Vec<String> = match Daemon::find(&home) {
+        Some(daemon) => {
+            let state = daemon.get("/api/state").await?;
+            let known: Vec<&str> = state["services"].as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
+            if let Some(unknown) = ids.iter().find(|id| !known.contains(&id.as_str())) {
+                bail!("Unknown service '{unknown}'");
+            }
+            let mut problems = Vec::new();
+            for id in &ids {
+                let reply = daemon.post(&format!("/api/services/{id}/agents"), json!({ "discoverable": on })).await?;
+                problems = serde_json::from_value(reply["problems"].clone()).unwrap_or_default();
+            }
+            problems
+        }
+        None => {
+            home.ensure()?;
+            let config = home.config()?;
+            let (services, _) = manifest::load_registry(&home);
+            if let Some(unknown) = ids.iter().find(|id| !services.iter().any(|s| &s.id == *id)) {
+                bail!("Unknown service '{unknown}'");
+            }
+            let mut state = home.load_state()?;
+            for id in &ids {
+                if on {
+                    state.agents.insert(id.clone());
+                } else {
+                    state.agents.remove(id);
+                }
+            }
+            home.save_state(&state)?;
+            agents::publish(&home, &config, &services, &state.agents).problems
+        }
+    };
+    for id in &ids {
+        println!("{id} is {}.", if on { "now discoverable by agents" } else { "now hidden from agents" });
+    }
+    for problem in problems {
+        eprintln!("! {problem}");
     }
     Ok(ExitCode::SUCCESS)
 }

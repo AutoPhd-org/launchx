@@ -227,6 +227,20 @@ impl App {
                     Err(message) => error(StatusCode::NOT_FOUND, &message),
                 }
             }
+            (&Method::GET, ["api", "agents"]) => json_response(StatusCode::OK, launcher.agents_index()),
+            (&Method::POST, ["api", "services", id, "agents"]) => {
+                let id = id.to_string();
+                if !launcher.has_service(&id) {
+                    return error(StatusCode::NOT_FOUND, &format!("Unknown service '{id}'"));
+                }
+                match read_json(request).await.get("discoverable").and_then(Value::as_bool) {
+                    Some(on) => match launcher.set_discoverable(&id, on) {
+                        Ok(reply) => json_response(StatusCode::OK, reply),
+                        Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, &message),
+                    },
+                    None => error(StatusCode::BAD_REQUEST, "Send {\"discoverable\": true} or {\"discoverable\": false}"),
+                }
+            }
             (&Method::POST, ["api", "services", id, action]) => {
                 let id = id.to_string();
                 match *action {

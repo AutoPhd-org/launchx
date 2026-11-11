@@ -49,6 +49,11 @@ function card(service) {
     : `<button class="button ${service.ui ? "" : "primary"}" data-action="start" data-id="${esc(service.id)}" ${pending || service.error && service.status !== "failed" ? "disabled" : ""}>Start</button>`;
   const restart = service.status === "running"
     ? `<button class="button" data-action="restart" data-id="${esc(service.id)}" ${pending ? "disabled" : ""}>Restart</button>` : "";
+  const agents = service.agents || { discoverable: false, skills: [] };
+  const offers = [service.cli ? "CLI" : "", agents.skills.length ? `${agents.skills.length} skill${agents.skills.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  const agentsHelp = agents.discoverable
+    ? `Agents are told about this app${agents.skills.length ? ` and get its skills: ${agents.skills.join(", ")}` : ""}.`
+    : "Hidden from agents. Switch on to list it in `lx agents` and publish its skills to your agents' skill folders.";
   return `<article class="card" data-card="${esc(service.id)}">
     <div class="card-head">
       <div class="icon" aria-hidden="true">${esc(icon)}</div>
@@ -65,6 +70,12 @@ function card(service) {
       <div><dt>Restarts</dt><dd>${service.restarts}</dd></div>
     </dl>
     ${requires || requiredBy ? `<div class="relations">${requires}${requires && requiredBy ? "<span>·</span>" : ""}${requiredBy}</div>` : ""}
+    <label class="agents" title="${esc(agentsHelp)}">
+      <input type="checkbox" role="switch" data-action="agents" data-id="${esc(service.id)}" ${agents.discoverable ? "checked" : ""} ${busy.has(`agents:${service.id}`) ? "disabled" : ""}>
+      <span class="switch" aria-hidden="true"></span>
+      <span>Discoverable by agents</span>
+      ${offers ? `<span class="offers">${esc(offers)}</span>` : ""}
+    </label>
     <div class="actions">${open}${toggle}${restart}<button class="button right" data-action="logs" data-id="${esc(service.id)}">Logs</button></div>
   </article>`;
 }
@@ -144,6 +155,26 @@ async function act(action, id) {
   }
 }
 
+async function setAgents(id, on) {
+  busy.add(`agents:${id}`);
+  render();
+  try {
+    const response = await fetch(`/api/services/${encodeURIComponent(id)}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discoverable: on }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    toast(on ? `Agents can now discover ${id}` : `${id} is hidden from agents`);
+  } catch (error) {
+    toast(`Could not change ${id}: ${error.message}`);
+  } finally {
+    busy.delete(`agents:${id}`);
+    refresh();
+  }
+}
+
 function appendLog(line) {
   const body = $("#logs-body");
   const span = document.createElement("span");
@@ -191,6 +222,10 @@ function connect() {
 $("#services").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (button) act(button.dataset.action, button.dataset.id);
+});
+$("#services").addEventListener("change", (event) => {
+  const box = event.target.closest('input[data-action="agents"]');
+  if (box) setAgents(box.dataset.id, box.checked);
 });
 $("#logs-close").addEventListener("click", closeLogs);
 document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !$("#logs").hidden) closeLogs(); });

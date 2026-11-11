@@ -22,7 +22,7 @@ use tokio::sync::{broadcast, watch};
 
 use crate::home::{Assigned, Config, Home, Persisted, RunFile};
 use crate::manifest::{self, HttpDef, Restart, Service, ServiceDef};
-use crate::{platform, util};
+use crate::{agents, platform, util};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOG_LIMIT: u64 = 5 * 1024 * 1024;
@@ -100,6 +100,10 @@ struct Inner {
     entries: BTreeMap<String, Entry>,
     errors: Vec<String>,
     persisted: Persisted,
+    /// Skill names each service ships, as last read (contract §4.7).
+    agent_skills: BTreeMap<String, Vec<String>>,
+    /// Problems from the last publish of agent skills (contract §10.7).
+    agent_problems: Vec<String>,
 }
 
 pub type HttpClient = Client<HttpConnector, Empty<Bytes>>;
@@ -110,6 +114,8 @@ pub struct Launcher {
     pub started_at: String,
     pub events: broadcast::Sender<Event>,
     inner: Mutex<Inner>,
+    /// Serialises publishing to the agents' skill folders.
+    publishing: Mutex<()>,
     http: HttpClient,
     env: Vec<(String, String)>,
 }
@@ -156,15 +162,18 @@ impl Launcher {
             entries.insert(service.id.clone(), Entry { service, rt: Runtime::default(), control: None, log });
         }
         let (events, _) = broadcast::channel(1024);
-        Ok(Arc::new(Launcher {
+        let launcher = Arc::new(Launcher {
             home,
             config,
             started_at: util::now_rfc3339(),
             events,
-            inner: Mutex::new(Inner { entries, errors, persisted }),
+            inner: Mutex::new(Inner { entries, errors, persisted, agent_skills: BTreeMap::new(), agent_problems: Vec::new() }),
+            publishing: Mutex::new(()),
             http: http_client(),
             env: platform::environment(),
-        }))
+        });
+        launcher.publish_agents();
+        Ok(launcher)
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -403,6 +412,7 @@ impl Launcher {
                 inner.entries.remove(id);
                 inner.persisted.services.remove(id);
                 inner.persisted.running.remove(id);
+                inner.persisted.agents.remove(id);
             }
             for service in services {
                 match inner.entries.get_mut(&service.id) {
@@ -417,8 +427,56 @@ impl Launcher {
             inner.errors = errors.clone();
             let _ = self.home.save_state(&inner.persisted);
         }
-        self.changed("*");
+        self.publish_agents();
         json!({ "added": added, "removed": removed, "errors": errors })
+    }
+
+    // --- Agent discovery (§10.7) -----------------------------------------
+
+    /// Bring the agents' skill folders in line with the services and switches.
+    pub fn publish_agents(&self) {
+        let _publishing = self.publishing.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (services, discoverable) = {
+            let inner = self.lock();
+            (inner.entries.values().map(|e| e.service.clone()).collect::<Vec<_>>(), inner.persisted.agents.clone())
+        };
+        let published = agents::publish(&self.home, &self.config, &services, &discoverable);
+        {
+            let mut inner = self.lock();
+            inner.agent_skills = published.skills;
+            inner.agent_problems = published.problems;
+        }
+        self.changed("*");
+    }
+
+    /// The user's switch: whether agents are told about `id`.
+    pub fn set_discoverable(&self, id: &str, on: bool) -> Result<Value, String> {
+        {
+            let mut inner = self.lock();
+            if !inner.entries.contains_key(id) {
+                return Err(format!("Unknown service '{id}'"));
+            }
+            let changed = if on { inner.persisted.agents.insert(id.to_string()) } else { inner.persisted.agents.remove(id) };
+            if changed {
+                self.home.save_state(&inner.persisted).map_err(|e| format!("{e:#}"))?;
+            }
+        }
+        self.publish_agents();
+        Ok(json!({ "id": id, "discoverable": on, "problems": self.lock().agent_problems }))
+    }
+
+    /// What agents are told: `GET /api/agents`.
+    pub fn agents_index(&self) -> Value {
+        let (services, discoverable, statuses) = {
+            let inner = self.lock();
+            let statuses: BTreeMap<String, Value> = inner.entries.iter().map(|(id, e)| (id.clone(), json!(e.rt.status))).collect();
+            (inner.entries.values().map(|e| e.service.clone()).collect::<Vec<_>>(), inner.persisted.agents.clone(), statuses)
+        };
+        let mut index = agents::index(&self.home, &self.config, &services, &discoverable, |id| {
+            statuses.get(id).and_then(Value::as_str).map(str::to_string)
+        });
+        index["launcher"] = json!({ "running": true, "version": VERSION, "gateway": self.config.launcher_url() });
+        index
     }
 
     /// Stop copies of services that a previous launcher left running.
@@ -503,6 +561,10 @@ impl Launcher {
                     "cli": def.cli,
                     "homepage": def.homepage,
                     "manifest": entry.service.manifest,
+                    "agents": {
+                        "discoverable": inner.persisted.agents.contains(id),
+                        "skills": inner.agent_skills.get(id).cloned().unwrap_or_default(),
+                    },
                 })
             })
             .collect();
@@ -514,7 +576,7 @@ impl Launcher {
                 "started_at": self.started_at,
                 "home": self.home.root,
             },
-            "errors": inner.errors,
+            "errors": inner.errors.iter().chain(&inner.agent_problems).collect::<Vec<_>>(),
             "services": services,
         })
     }
