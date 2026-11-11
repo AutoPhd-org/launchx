@@ -1,0 +1,79 @@
+# LaunchX
+
+**One launcher for agent-native apps: local services that you use in the browser and your AI agent uses through the command line.**
+
+LaunchX runs your local services from one place. Each service describes itself in a `launchx.toml` manifest; LaunchX starts it in the order its dependencies need, gives it a port and a token, watches its health, keeps its logs, and puts its page behind one signed-in address such as `http://vmc.localhost:7600/`. On macOS it comes with an app you drive with the mouse.
+
+The contract a service follows is in [SPEC.md](SPEC.md). In short, an agent-native app:
+
+- **exposes its whole state** as one JSON document, so nothing is only visible on screen;
+- **has a CLI that is a peer of its GUI**, so an agent can do anything you can, and the page shows it at once;
+- **puts its GUI in the browser**, where you already have tabs, bookmarks and your password manager;
+- **runs in the foreground under the launcher**, which hands it a port and a token and keeps everything else (sign-in, logs, restarts, dependencies) out of the app.
+
+<p align="center"><img src="docs/ecosystem.svg" alt="The AutoPhD ecosystem: you use apps in the browser through LaunchX, your coding agent uses the same apps through their CLIs and JSON state, and agent plugins run inside the agent. LaunchX runs Schedule Everything and vmc." width="100%"></p>
+
+LaunchX is part of [AutoPhD](https://github.com/AutoPhd-org). Status: contract draft 0.1, working launcher on macOS and Linux; the app is macOS only.
+
+## Install
+
+Needs Rust (cargo) and, on macOS, the Xcode command-line tools (swiftc).
+
+```sh
+./install.sh            # macOS: LaunchX.app into ~/Applications, lx linked into ~/.local/bin
+lx up                   # start the launcher now and at every login
+lx add ~/code/my-app    # register a service by its directory
+```
+
+On Linux `install.sh` copies `lx` into `~/.local/bin`; use the browser page at `http://launchx.localhost:7600/` (`lx open`).
+`lx daemon` runs the launcher in a terminal instead of at login.
+
+## The app (macOS)
+
+Open **LaunchX** from Launchpad, Spotlight or `~/Applications`.
+
+- **Main window:** every service as a card with its status, health, summary, version and port, plus Open, Start, Stop, Restart and Logs buttons. It is the launcher's web page, signed in automatically.
+- **Open** sends a service's page to your default browser, already signed in (starting the service first if needed). After that, a bookmark such as `http://vmc.localhost:7600/` signs in on its own for 30 days.
+- **Menu bar (paper plane):** each service with a coloured dot and Open / Start / Stop / Restart, without opening the window.
+- **When the launcher is not running,** the window offers a Start button (it runs `lx up`).
+
+LaunchX is the only app: services stay in the browser, where they get tabs, bookmarks, Find and extensions. Quitting the app leaves the launcher and services running; they belong to the daemon, not the window. The app carries its own copy of `lx`, which `~/.local/bin/lx` links to.
+
+## Commands
+
+| Command | Does |
+|---|---|
+| `lx ls` | Services with status, health, version, port and summary. |
+| `lx start <id>` / `lx stop <id>` / `lx restart <id>` | Control a service. Start brings up what it requires; stop first stops what requires it. Services you started come back when the launcher restarts (at login, after an update) until you stop them. |
+| `lx open [id]` | Open the launcher, or a service's page, in the browser. |
+| `lx logs <id> [-f] [-n N]` | Captured output, including the launcher's own notes (`[launchx]`). |
+| `lx add <path>` / `lx rm <id>` | Register or unregister a manifest. `rm` removes the link in `~/.launchx/services`, never the manifest. |
+| `lx check <id>` | Start a temporary copy on a spare port and test it against the level it claims. |
+| `lx state` | The launcher's full state document as JSON. |
+| `lx up` / `lx down` | Register or remove the launcher as a login service, and start or stop it. |
+
+Every page of the launcher is also an API: `GET /api/state`, `GET /api/events` (server-sent events), `POST /api/services/<id>/start`. Programs reach it at `http://127.0.0.1:7600` with the token in `~/.launchx/run/launchx.json`.
+
+## Files
+
+`~/.launchx` (or `$LAUNCHX_HOME`), mode 0700:
+
+```
+config.toml        gateway_port = 7600, backoff_unit_ms = 1000
+services/          links to registered manifests
+run/<id>.json      URL, token and pid of each running service (mode 0600)
+logs/<id>.log      captured output, rotated at 5 MB
+state.json         assigned ports and tokens, and the session secret (mode 0600)
+```
+
+## Development
+
+```sh
+cargo test          # unit tests and an end-to-end run against fixture services
+```
+
+The end-to-end test starts a real daemon on a spare port with fixture services and covers dependency order, sign-in, the token swap, the Origin check, streaming and Upgrade through the gateway, restart back-off, `lx check`, and shutdown.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>LaunchX</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="/favicon.svg" alt="" width="22" height="22"><span>LaunchX</span></div>
+    <div class="overview" id="overview">Connecting…</div>
+    <div class="connection" id="connection"><span class="dot"></span><span>Connecting</span></div>
+  </header>
+
+  <main>
+    <div class="banner" id="errors" role="alert" hidden></div>
+    <section class="grid" id="services" aria-live="polite"></section>
+    <section class="empty" id="empty" hidden>
+      <h2>No services yet</h2>
+      <p>Register a service by pointing LaunchX at its manifest:</p>
+      <pre>lx add ~/path/to/project</pre>
+      <p>A manifest is a <code>launchx.toml</code> that says how to run the service and where its health, state and page are.</p>
+    </section>
+  </main>
+
+  <footer class="page-footer" id="footer"></footer>
+
+  <aside class="logs" id="logs" aria-labelledby="logs-title" hidden>
+    <header>
+      <h2 id="logs-title">Logs</h2>
+      <label class="follow"><input type="checkbox" id="logs-follow" checked> Follow</label>
+      <button class="icon-button" id="logs-close" aria-label="Close logs">×</button>
+    </header>
+    <pre id="logs-body"></pre>
+  </aside>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

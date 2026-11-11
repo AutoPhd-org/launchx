@@ -1,0 +1,33 @@
+[package]
+name = "launchx"
+version = "0.1.0"
+edition = "2021"
+description = "A launcher for local services that follow the LaunchX contract"
+license = "MIT"
+repository = "https://github.com/AutoPhd-org/launchx"
+
+[[bin]]
+name = "lx"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+base64 = "0.22"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+getrandom = "0.3"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1", "server"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+toml = "1"
+
+[profile.release]
+strip = true
