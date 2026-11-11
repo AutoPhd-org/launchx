@@ -480,7 +480,7 @@ The page polls `/api/state`; there is no event stream.
 
 ### Schedule Everything — level 2, adapting an existing app
 
-[Schedule Everything](https://github.com/AutoPhd-org/schedule-everything) (`rmd`) already had bearer-token auth, a health route, a server-sent event stream and a broad CLI. Its server started itself in the background and kept its own registry of port, token and process. To meet the contract:
+[Schedule Everything](https://github.com/AutoPhd-org/schedule-everything) (`rmd`) already had bearer-token auth, a health route, a server-sent event stream and a broad CLI. Its server started itself in the background and kept its own registry of port, token and process. To meet the contract (these changes are working but not yet released in Schedule Everything):
 
 1. `rmd serve` runs the same server in the foreground, with port and token from the environment, and skips its own registry, detaching and browser sessions.
 2. `/api/health` reports `id`, `version`, `status` and a summary such as "11 open tasks · next: dinner at 18:30".
