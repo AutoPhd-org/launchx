@@ -1,19 +1,30 @@
 # LaunchX
 
-**One launcher for agent-native apps: local services that you use in the browser and your AI agent uses through the command line.**
+**The launcher and the contract for apps that people and their agents use together.**
 
-LaunchX runs your local services from one place. Each service describes itself in a `launchx.toml` manifest; LaunchX starts it in the order its dependencies need, gives it a port and a token, watches its health, keeps its logs, and puts its page behind one signed-in address such as `http://vmc.localhost:7600/`. On macOS it comes with an app you drive with the mouse.
+LLMs started out as chatbots. We wanted them to act, so we wrapped them in harnesses, and from 2023 to 2026 the harness is where most of the invention went. The interface stayed where it was. You still tell an agent everything in words, in a chat session, and the agent still reaches your software through its front door: screenshots, clicks and file reads that burn tokens before the work you asked for even starts.
 
-The contract a service follows is in [SPEC.md](SPEC.md). In short, an agent-native app:
+[AutoPhD](https://github.com/AutoPhd-org) works on that part. We don't make better models or better harnesses; we try to build software in which an agent sees an app's state directly and you can answer it with more than words. LaunchX is the foundation, and it does two jobs:
 
-- **exposes its whole state** as one JSON document, so nothing is only visible on screen;
+- **A contract** ([SPEC.md](SPEC.md)) for how an app opens itself up: its whole state as one JSON document, a command for every action, and its page in the browser. An agent reads the state in one call, acts with one command, and what it did shows up on the page you are looking at.
+- **A launcher** that runs such apps on your machine. Each app describes itself in a `launchx.toml` manifest; LaunchX starts it in the order its dependencies need, gives it a port and a token, watches its health, keeps its logs, and puts its page behind one signed-in address such as `http://vmc.localhost:7600/`. A switch per app decides whether your agents are told about it. On macOS it comes with an app you drive with the mouse.
+
+<p align="center"><img src="docs/direct-state.svg" alt="An app has one state document and a page that is one view of it. You use the page. Your agent reads the state and runs commands directly, through access switches you set for each part of the state. The route agents take today, through screenshots and clicks on the page, is drawn as a long detour." width="100%"></p>
+
+The picture is where this is heading. Today LaunchX gives you the state document, the commands and one switch per app; switches for each part of an app come next.
+
+## The contract in short
+
+An app that follows the contract:
+
+- **exposes its whole state** as one JSON document, so nothing is only visible on screen and an agent never has to rebuild it from pixels;
 - **has a CLI that is a peer of its GUI**, so an agent can do anything you can, and the page shows it at once;
-- **puts its GUI in the browser**, where you already have tabs, bookmarks and your password manager;
+- **puts its GUI in the browser**, where you already have tabs, bookmarks and your password manager, and where you and your agent can share one page;
 - **runs in the foreground under the launcher**, which hands it a port and a token and keeps everything else (sign-in, logs, restarts, dependencies) out of the app.
 
-<p align="center"><img src="docs/ecosystem.svg" alt="The AutoPhD ecosystem: you use apps in the browser through LaunchX, your coding agent uses the same apps through their CLIs and JSON state, and agent plugins run inside the agent. LaunchX runs Schedule Everything and vmc." width="100%"></p>
+<p align="center"><img src="docs/ecosystem.svg" alt="What exists today: you use each app's page in the browser through LaunchX, your agent reads the same app's JSON state and runs its commands, and agent plugins run inside the agent. LaunchX runs Schedule Everything and vmc." width="100%"></p>
 
-LaunchX is part of [AutoPhD](https://github.com/AutoPhd-org). Status: contract draft 0.1, working launcher on macOS and Linux; the app is macOS only.
+Status: contract draft 0.1, working launcher on macOS and Linux; the app is macOS only.
 
 ## Install
 

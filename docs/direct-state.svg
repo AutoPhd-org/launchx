@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 668" width="1200" height="668" role="img" aria-labelledby="title desc" font-family='Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif'>
+<title id="title">The agent works on the app's state, not on its pixels</title>
+<desc id="desc">An app has one state document and a page that is one view of it. You use the page. Your agent reads the state and runs commands directly, through access switches you set for each part of the state: what it may see and whether it may act, ask first, or not act. The old route, where the agent reaches the state through screenshots and clicks on the page, is shown as a long detour.</desc>
+<style>.f-bg{fill:#f7f8fb} .s-bg{stroke:#f7f8fb} .f-frame{fill:#e6e9f0} .s-frame{stroke:#e6e9f0} .f-card{fill:#ffffff} .s-card{stroke:#ffffff} .f-cardb{fill:#dfe3eb} .s-cardb{stroke:#dfe3eb} .f-panel{fill:#eef1f6} .s-panel{stroke:#eef1f6} .f-panelb{fill:#dfe3eb} .s-panelb{stroke:#dfe3eb} .f-ink{fill:#15171c} .s-ink{stroke:#15171c} .f-ink2{fill:#353a45} .s-ink2{stroke:#353a45} .f-muted{fill:#5b6271} .s-muted{stroke:#5b6271} .f-faint{fill:#8a93a6} .s-faint{stroke:#8a93a6} .f-line{fill:#aab2c2} .s-line{stroke:#aab2c2} .f-you{fill:#3b5bdb} .s-you{stroke:#3b5bdb} .f-yous{fill:#edf1ff} .s-yous{stroke:#edf1ff} .f-youb{fill:#b9c6f5} .s-youb{stroke:#b9c6f5} .f-agent{fill:#6741d9} .s-agent{stroke:#6741d9} .f-agents{fill:#f1edff} .s-agents{stroke:#f1edff} .f-agentb{fill:#cbbdf5} .s-agentb{stroke:#cbbdf5} .f-app{fill:#2b8a3e} .s-app{stroke:#2b8a3e} .f-apps{fill:#eaf6ec} .s-apps{stroke:#eaf6ec} .f-appb{fill:#a9d9b3} .s-appb{stroke:#a9d9b3} .f-hot{fill:#c92a2a} .s-hot{stroke:#c92a2a} .f-hots{fill:#fdecec} .s-hots{stroke:#fdecec} .f-hotb{fill:#f1b0b0} .s-hotb{stroke:#f1b0b0} .f-pen{fill:#c25d00} .s-pen{stroke:#c25d00} .f-on{fill:#ffffff} .s-on{stroke:#ffffff} @media (prefers-color-scheme: dark) { .f-bg{fill:#0f1115} .s-bg{stroke:#0f1115} .f-frame{fill:#22262f} .s-frame{stroke:#22262f} .f-card{fill:#171a21} .s-card{stroke:#171a21} .f-cardb{fill:#2b303b} .s-cardb{stroke:#2b303b} .f-panel{fill:#12151b} .s-panel{stroke:#12151b} .f-panelb{fill:#2b303b} .s-panelb{stroke:#2b303b} .f-ink{fill:#e8eaef} .s-ink{stroke:#e8eaef} .f-ink2{fill:#c3c8d2} .s-ink2{stroke:#c3c8d2} .f-muted{fill:#9aa1ad} .s-muted{stroke:#9aa1ad} .f-faint{fill:#6b7385} .s-faint{stroke:#6b7385} .f-line{fill:#4a5162} .s-line{stroke:#4a5162} .f-you{fill:#8fa5ff} .s-you{stroke:#8fa5ff} .f-yous{fill:#161d38} .s-yous{stroke:#161d38} .f-youb{fill:#34417a} .s-youb{stroke:#34417a} .f-agent{fill:#b197fc} .s-agent{stroke:#b197fc} .f-agents{fill:#1d1838} .s-agents{stroke:#1d1838} .f-agentb{fill:#47397f} .s-agentb{stroke:#47397f} .f-app{fill:#63d47a} .s-app{stroke:#63d47a} .f-apps{fill:#11261a} .s-apps{stroke:#11261a} .f-appb{fill:#2a6b3a} .s-appb{stroke:#2a6b3a} .f-hot{fill:#ff8787} .s-hot{stroke:#ff8787} .f-hots{fill:#2d1516} .s-hots{stroke:#2d1516} .f-hotb{fill:#7d3436} .s-hotb{stroke:#7d3436} .f-pen{fill:#ffa94d} .s-pen{stroke:#ffa94d} .f-on{fill:#0f1115} .s-on{stroke:#0f1115} }</style>
+<defs><marker id="ah-line" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-line"/></marker><marker id="ah-faint" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-faint"/></marker><marker id="ah-muted" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-muted"/></marker><marker id="ah-you" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-you"/></marker><marker id="ah-agent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-agent"/></marker><marker id="ah-app" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-app"/></marker><marker id="ah-hot" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-hot"/></marker></defs>
+<rect x="1" y="1" width="1198" height="666" rx="24" class="f-bg s-frame" stroke-width="1.5"/>
+<text x="48" y="54" class="f-you" font-size="12.5" font-weight="800" letter-spacing="2.2">WHERE THIS IS HEADING · 1</text>
+<text x="48" y="91" class="f-ink" font-size="27" font-weight="750" letter-spacing="-0.4">The agent works on the app's state, not on its pixels</text>
+<path d="M148,456 V170 Q148,152 166,152 H992 Q1010,152 1010,170 V212" class="s-faint" fill="none" stroke-width="1.8" stroke-dasharray="5 6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-faint)"/>
+<text x="176" y="138" class="f-muted" font-size="13.5">Today: the long way round. Every step is a screenshot and another model call.</text>
+<rect x="695" y="141" width="50" height="22" rx="0" class="f-bg"/>
+<rect x="700" y="144" width="22" height="16" rx="3.5" class="f-panel s-faint" stroke-width="1.4"/>
+<path d="M700,149 L722,149" class="s-faint" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M728,145 L728,158.12 L731.608,155.004 L734.068,160.252 L736.2,159.268 L733.822,154.184 L738.332,154.184 Z" class="f-faint s-bg" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="755" y="141" width="50" height="22" rx="0" class="f-bg"/>
+<rect x="760" y="144" width="22" height="16" rx="3.5" class="f-panel s-faint" stroke-width="1.4"/>
+<path d="M760,149 L782,149" class="s-faint" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M788,145 L788,158.12 L791.608,155.004 L794.068,160.252 L796.2,159.268 L793.822,154.184 L798.332,154.184 Z" class="f-faint s-bg" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="815" y="141" width="50" height="22" rx="0" class="f-bg"/>
+<rect x="820" y="144" width="22" height="16" rx="3.5" class="f-panel s-faint" stroke-width="1.4"/>
+<path d="M820,149 L842,149" class="s-faint" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M848,145 L848,158.12 L851.608,155.004 L854.068,160.252 L856.2,159.268 L853.822,154.184 L858.332,154.184 Z" class="f-faint s-bg" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="875" y="141" width="50" height="22" rx="0" class="f-bg"/>
+<rect x="880" y="144" width="22" height="16" rx="3.5" class="f-panel s-faint" stroke-width="1.4"/>
+<path d="M880,149 L902,149" class="s-faint" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M908,145 L908,158.12 L911.608,155.004 L914.068,160.252 L916.2,159.268 L913.822,154.184 L918.332,154.184 Z" class="f-faint s-bg" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="600" y="178" width="552" height="462" rx="22" class="f-panel s-panelb" stroke-width="1.5"/>
+<text x="624" y="204" class="f-muted" font-size="11.5" font-weight="800" letter-spacing="1.6">ONE APP</text>
+<rect x="624" y="216" width="504" height="142" rx="16" class="f-card s-cardb" stroke-width="1.5"/>
+<text x="646" y="252" class="f-ink" font-size="18.5" font-weight="700">The page</text>
+<text x="646" y="275" class="f-muted" font-size="13.5">what you look at</text>
+<text x="646" y="293" class="f-muted" font-size="13.5">and touch</text>
+<rect x="646" y="312" width="140" height="24" rx="12" class="f-yous s-youb" stroke-width="1.2"/>
+<text x="716" y="328.14" class="f-you" font-size="11.5" font-weight="700" text-anchor="middle" letter-spacing="0.2">one view of the state</text>
+<rect x="836" y="236" width="38" height="6" rx="3" class="f-line"/>
+<rect x="836" y="252" width="80" height="22" rx="6" class="f-panel s-panelb" stroke-width="1.3"/>
+<rect x="845" y="260.5" width="34" height="5" rx="2.5" class="f-line"/>
+<rect x="836" y="282" width="80" height="22" rx="6" class="f-agents s-agent" stroke-width="1.4" stroke-dasharray="4 3"/>
+<rect x="836" y="312" width="80" height="22" rx="6" class="f-panel s-panelb" stroke-width="1.3"/>
+<rect x="845" y="320.5" width="36" height="5" rx="2.5" class="f-line"/>
+<rect x="930" y="236" width="38" height="6" rx="3" class="f-line"/>
+<rect x="930" y="252" width="80" height="22" rx="6" class="f-panel s-panelb" stroke-width="1.3"/>
+<rect x="939" y="260.5" width="41" height="5" rx="2.5" class="f-line"/>
+<rect x="930" y="282" width="80" height="22" rx="6" class="f-panel s-panelb" stroke-width="1.3"/>
+<rect x="939" y="290.5" width="54" height="5" rx="2.5" class="f-line"/>
+<rect x="1024" y="236" width="38" height="6" rx="3" class="f-line"/>
+<rect x="1024" y="252" width="80" height="22" rx="6" class="f-panel s-panelb" stroke-width="1.3"/>
+<rect x="1033" y="260.5" width="48" height="5" rx="2.5" class="f-line"/>
+<rect x="1024" y="282" width="80" height="22" rx="6" class="f-panel s-panelb" stroke-width="1.3"/>
+<rect x="1033" y="290.5" width="37" height="5" rx="2.5" class="f-line"/>
+<path d="M876,362 L876,394" class="s-muted" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-muted)" marker-start="url(#ah-muted)"/>
+<text x="890" y="383" class="f-muted" font-size="12.5">the same data, both ways</text>
+<rect x="624" y="398" width="504" height="218" rx="16" class="f-card s-app" stroke-width="2.2"/>
+<text x="646" y="434" class="f-ink" font-size="18.5" font-weight="700">The state</text>
+<text x="646" y="457" class="f-muted" font-size="13.5">one JSON document,</text>
+<text x="646" y="475" class="f-muted" font-size="13.5">one command per action</text>
+<rect x="646" y="496" width="121" height="25" rx="12.5" class="f-apps s-appb" stroke-width="1.2"/>
+<text x="706.5" y="512.82" class="f-app" font-size="12" font-weight="600" text-anchor="middle" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' letter-spacing="0">GET /api/state</text>
+<rect x="646" y="529" width="128" height="25" rx="12.5" class="f-apps s-appb" stroke-width="1.2"/>
+<text x="710" y="545.82" class="f-app" font-size="12" font-weight="600" text-anchor="middle" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' letter-spacing="0">$ app &lt;command&gt;</text>
+<rect x="836" y="414" width="274" height="186" rx="12" class="f-panel s-panelb" stroke-width="1.3"/>
+<circle cx="856" cy="441.5" r="4.5" class="f-app"/>
+<text x="872" y="446" class="f-ink" font-size="13.5" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>tasks</text>
+<text x="1094" y="446" class="f-muted" font-size="13" text-anchor="end" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>9 open</text>
+<circle cx="856" cy="472.5" r="4.5" class="f-app"/>
+<text x="872" y="477" class="f-ink" font-size="13.5" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>today.plan</text>
+<text x="1094" y="477" class="f-muted" font-size="13" text-anchor="end" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>3 blocks</text>
+<circle cx="856" cy="503.5" r="4.5" class="f-app"/>
+<text x="872" y="508" class="f-ink" font-size="13.5" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>deadlines</text>
+<text x="1094" y="508" class="f-muted" font-size="13" text-anchor="end" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>5</text>
+<circle cx="856" cy="534.5" r="4.5" class="f-app"/>
+<text x="872" y="539" class="f-ink" font-size="13.5" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>habits</text>
+<text x="1094" y="539" class="f-muted" font-size="13" text-anchor="end" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>4</text>
+<rect x="850.5" y="562" width="11" height="8.5" rx="2" class="f-faint"/>
+<path d="M853,562 V560.4 a3,3 0 0 1 6,0 V562" class="s-faint" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="872" y="570" class="f-faint" font-size="13.5" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>journal</text>
+<text x="1094" y="570" class="f-faint" font-size="13" text-anchor="end" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>not shared</text>
+<rect x="300" y="236" width="220" height="96" rx="18" class="f-yous s-youb" stroke-width="1.5"/>
+<circle cx="344" cy="267.18" r="11.18" class="f-you"/>
+<path d="M324.22,305.88 C324.22,289.54 332.82,282.66 344,282.66 C355.18,282.66 363.78,289.54 363.78,305.88 Z" class="f-you"/>
+<text x="380" y="280" class="f-ink" font-size="20" font-weight="700">You</text>
+<text x="380" y="302" class="f-muted" font-size="13.5">look, click, drag</text>
+<path d="M522,284 L620,284" class="s-you" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-you)"/>
+<path d="M410,334 L410,394" class="s-you" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-you)"/>
+<text x="424" y="370" class="f-you" font-size="13" font-weight="600">you decide</text>
+<rect x="300" y="398" width="220" height="218" rx="18" class="f-card s-you" stroke-width="2.2"/>
+<text x="318" y="426" class="f-you" font-size="11.5" font-weight="800" letter-spacing="1.4">AGENT ACCESS</text>
+<text x="438" y="464" class="f-muted" font-size="11.5" font-weight="700" text-anchor="middle" letter-spacing="0.4">see</text>
+<text x="486" y="464" class="f-muted" font-size="11.5" font-weight="700" text-anchor="middle" letter-spacing="0.4">act</text>
+<path d="M318,471.5 L506,471.5" class="s-panelb" fill="none" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="318" y="492" class="f-ink2" font-size="13" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>tasks</text>
+<rect x="423" y="479" width="30" height="17" rx="8.5" class="f-app"/>
+<circle cx="444.5" cy="487.5" r="5.8" class="f-on"/>
+<rect x="467" y="477.5" width="38" height="20" rx="10" class="f-agents s-agentb" stroke-width="1.2"/>
+<text x="486" y="491.8" class="f-agent" font-size="12" font-weight="700" text-anchor="middle">ask</text>
+<path d="M318,503.5 L506,503.5" class="s-panelb" fill="none" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="318" y="524" class="f-ink2" font-size="13" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>today.plan</text>
+<rect x="423" y="511" width="30" height="17" rx="8.5" class="f-app"/>
+<circle cx="444.5" cy="519.5" r="5.8" class="f-on"/>
+<rect x="467" y="509.5" width="38" height="20" rx="10" class="f-apps s-appb" stroke-width="1.2"/>
+<text x="486" y="523.8" class="f-app" font-size="12" font-weight="700" text-anchor="middle">yes</text>
+<path d="M318,535.5 L506,535.5" class="s-panelb" fill="none" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="318" y="556" class="f-ink2" font-size="13" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>deadlines</text>
+<rect x="423" y="543" width="30" height="17" rx="8.5" class="f-app"/>
+<circle cx="444.5" cy="551.5" r="5.8" class="f-on"/>
+<rect x="467" y="541.5" width="38" height="20" rx="10" class="f-panel s-panelb" stroke-width="1.2"/>
+<text x="486" y="555.8" class="f-faint" font-size="12" font-weight="700" text-anchor="middle">no</text>
+<path d="M318,567.5 L506,567.5" class="s-panelb" fill="none" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="318" y="588" class="f-faint" font-size="13" font-family='ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'>journal</text>
+<rect x="423" y="575" width="30" height="17" rx="8.5" class="f-line"/>
+<circle cx="431.5" cy="583.5" r="5.8" class="f-card"/>
+<rect x="467" y="573.5" width="38" height="20" rx="10" class="f-panel s-panelb" stroke-width="1.2"/>
+<text x="486" y="587.8" class="f-faint" font-size="12" font-weight="700" text-anchor="middle">no</text>
+<rect x="48" y="456" width="200" height="96" rx="18" class="f-agents s-agentb" stroke-width="1.5"/>
+<circle cx="88" cy="504" r="19" class="f-card s-agent" stroke-width="2"/>
+<path d="M88,493 Q88,504 99,504 Q88,504 88,515 Q88,504 77,504 Q88,504 88,493 Z" class="f-agent"/>
+<text x="118" y="499" class="f-ink" font-size="18" font-weight="700">Your agent</text>
+<text x="118" y="520" class="f-muted" font-size="13.5">any harness</text>
+<path d="M251,504 L297,504" class="s-agent" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-agent)" marker-start="url(#ah-agent)"/>
+<path d="M620,478 L524,478" class="s-app" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-app)"/>
+<text x="572" y="468" class="f-app" font-size="13" font-weight="700" text-anchor="middle">reads</text>
+<path d="M524,530 L620,530" class="s-app" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#ah-app)"/>
+<text x="572" y="551" class="f-app" font-size="13" font-weight="700" text-anchor="middle">acts</text>
+</svg>
