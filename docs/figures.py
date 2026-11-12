@@ -7,6 +7,11 @@ github writes bottleneck.svg, direct-state.svg, shared-interface.svg and ecosyst
 blog writes pipeline-then, pipeline-now, direct-state and shared-interface, each as
 <name>.svg and <name>-dark.svg. Names after the directory limit the output to those figures.
 
+Where they are used:
+    this repository's README   docs/: bottleneck direct-state shared-interface
+    the AutoPhD org page       profile/ in AutoPhd-org/.github: ecosystem shared-interface
+    the blog post              all four blog figures
+
 Edit this script, not the SVG files.
 """
 import sys
@@ -384,7 +389,7 @@ def fig_direct_state(palette, mode):
             "state and runs commands directly, through access switches you set for each part of the state: what it may "
             "see and whether it may act, ask first, or not act. The old route, where the agent reaches the state through "
             "screenshots and clicks on the page, is shown as a long detour.", palette, mode)
-    heading(s, "WHERE THIS IS HEADING · 1", "The agent works on the app's state, not on its pixels")
+    heading(s, "WHERE THIS IS HEADING" + (" · 1" if palette == "blog" else ""), "The agent works on the app's state, not on its pixels")
 
     # The long way round: through the page, one screenshot at a time.
     s.path("M148,456 V170 Q148,152 166,152 H992 Q1010,152 1010,170 V212", stroke="faint", sw=1.8, dash="5 6", end=True)
@@ -495,7 +500,7 @@ def fig_shared_interface(palette, mode):
             "Reject buttons; a task you circled with a pen and wrote a note on; and a task the agent just added, with "
             "undo. Shortcut keys accept, reject, undo and ask. A side panel has switches for what the agent can see and "
             "do in each part of the app, and the chat box is still there.", palette, mode)
-    heading(s, "WHERE THIS IS HEADING · 2", "You and the agent share one interface")
+    heading(s, "WHERE THIS IS HEADING" + (" · 2" if palette == "blog" else ""), "You and the agent share one interface")
 
     wx, wy, ww, wh = 48, 120, 1104, 462
     s.rect(wx, wy, ww, wh, 18, fill="card", stroke="cardb", sw=1.6)

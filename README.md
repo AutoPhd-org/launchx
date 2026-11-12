@@ -1,30 +1,72 @@
 # LaunchX
 
-**The launcher and the contract for apps that people and their agents use together.**
+**The launcher and the contract for a software ecosystem that people and their agents share.**
 
-LLMs started out as chatbots. We wanted them to act, so we wrapped them in harnesses, and from 2023 to 2026 the harness is where most of the invention went. The interface stayed where it was. You still tell an agent everything in words, in a chat session, and the agent still reaches your software through its front door: screenshots, clicks and file reads that burn tokens before the work you asked for even starts.
+LaunchX is two things. It is a launcher that runs your local apps from one place, with a Mac app you drive with the mouse. And it is a [contract](SPEC.md) for how an app opens itself to both of its users: the person and the person's agent. This README starts with the thinking behind the contract. The practical part starts at [Install](#install).
 
-[AutoPhD](https://github.com/AutoPhd-org) works on that part. We don't make better models or better harnesses; we try to build software in which an agent sees an app's state directly and you can answer it with more than words. LaunchX is the foundation, and it does two jobs:
+<p align="center">
+  <a href="#why-a-new-ecosystem">Why</a> ·
+  <a href="#the-philosophy">The philosophy</a> ·
+  <a href="#what-the-contract-asks">What the contract asks</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="SPEC.md">The contract</a>
+</p>
 
-- **A contract** ([SPEC.md](SPEC.md)) for how an app opens itself up: its whole state as one JSON document, a command for every action, and its page in the browser. An agent reads the state in one call, acts with one command, and what it did shows up on the page you are looking at.
-- **A launcher** that runs such apps on your machine. Each app describes itself in a `launchx.toml` manifest; LaunchX starts it in the order its dependencies need, gives it a port and a token, watches its health, keeps its logs, and puts its page behind one signed-in address such as `http://vmc.localhost:7600/`. A switch per app decides whether your agents are told about it. On macOS it comes with an app you drive with the mouse.
+## Why a new ecosystem
+
+First there were LLMs, and all an LLM could do was chat. We wanted them to act, so we gave them tools and a loop to use them in, and the code around the model became the harness. From 2023 to 2026 most of the invention went into that harness, and it worked: an agent can now plan, call tools and work for hours.
+
+The interface did not move. A person still tells an agent everything in words, in a chat session, and reads long text back. An agent still reaches software through the door that was built for people: a screenshot, a click, another screenshot, or one file after another, spending tokens to learn a state the app already knows.
+
+<p align="center"><img src="docs/bottleneck.svg" alt="Two pictures of the same pipeline: you, an agent, and software. In 2023 you write a prompt and read an answer, the agent executes a tool call or two, and the agent is the bottleneck. In 2026 the agent, inside a harness, plans, calls tools and works for hours, and the two links are the bottleneck: what you see has to become words, and the agent rebuilds the app's state from screenshots, clicks and file reads before the work starts." width="100%"></p>
+
+So the limit is no longer the model, and it is no longer the harness. It is the place where the person, the agent and the software meet. Two questions follow from that:
+
+- Who said people must convey information in words?
+- Who said an agent must walk an app from its front to its back to read and change its state?
+
+Answering them is interface engineering, and it is all this project does. LaunchX does not make a better model or a better harness. It describes software that a person and an agent can use together, and it runs that software.
+
+## The philosophy
+
+Eight ideas shape the contract. Each is a claim about how software should be built now that it has two kinds of user.
+
+**1. An app can say what state it is in.** Everything its page shows comes from one JSON document, and the page has no private channel, so nothing exists only on screen. An agent learns in one call what would otherwise take a chain of screenshots. The contract's test: someone holding only the documentation and a token could rebuild the whole page.
+
+**2. Every action is a command.** Anything a person can do on the page, a command can do, and the result shows on the page at once. The command line is a peer of the page, never an afterthought. An agent acts in one step, and so can a script or another app.
+
+**3. The person holds the switches.** An agent works on an app with its owner's authorization, never around it. In LaunchX every app is hidden from agents until you switch it on, and an app can let an agent propose a change that waits for your yes.
 
 <p align="center"><img src="docs/direct-state.svg" alt="An app has one state document and a page that is one view of it. You use the page. Your agent reads the state and runs commands directly, through access switches you set for each part of the state. The route agents take today, through screenshots and clicks on the page, is drawn as a long detour." width="100%"></p>
 
-The picture is where this is heading. Today LaunchX gives you the state document, the commands and one switch per app; switches for each part of an app come next.
+**4. The page is shared.** An app's interface is a web page served by its own backend. It is the same page for you and for your agent's work: what the agent does appears where you are already looking, so it does not have to describe your own app to you in a chat.
 
-## The contract in short
+**5. Words are one input among several.** On a shared page you can answer an agent with a button, a switch or a drag, and next with a pen or a shortcut key. The chat box stays for what is best said as a sentence. An app should offer the quickest way to say each thing.
 
-An app that follows the contract:
+<p align="center"><img src="docs/shared-interface.svg" alt="One app window that you and your agent both use. On a task board, a task the agent suggested has Add and Reject buttons, a task you circled with a pen carries your handwritten note, and a task the agent just added can be undone. A bar lists shortcut keys. A side panel has switches for what the agent can see and do in each part of the app, and the chat box is still there." width="100%"></p>
 
-- **exposes its whole state** as one JSON document, so nothing is only visible on screen and an agent never has to rebuild it from pixels;
-- **has a CLI that is a peer of its GUI**, so an agent can do anything you can, and the page shows it at once;
-- **puts its GUI in the browser**, where you already have tabs, bookmarks and your password manager, and where you and your agent can share one page;
-- **runs in the foreground under the launcher**, which hands it a port and a token and keeps everything else (sign-in, logs, restarts, dependencies) out of the app.
+**6. Apps stay small; the launcher owns the plumbing.** An app is handed its port and its token and runs in the foreground. Sign-in, logs, restarts, health and the order apps start in belong to the launcher, once, for every app.
 
-<p align="center"><img src="docs/ecosystem.svg" alt="What exists today: you use each app's page in the browser through LaunchX, your agent reads the same app's JSON state and runs its commands, and agent plugins run inside the agent. LaunchX runs Schedule Everything and vmc." width="100%"></p>
+**7. Local first.** Data lives in files you own, an app listens only on your own machine unless you decide otherwise, and anything private (the names of your machines, your organisation, your accounts) stays in a file outside the app's repository.
 
-Status: contract draft 0.1, working launcher on macOS and Linux; the app is macOS only.
+**8. No side taken on models or harnesses.** The contract asks nothing of an agent except that it can run a command and read JSON, so whichever model and harness you use next year will work. It asks little of software too: an app that has never heard of LaunchX joins with a manifest and no code changes.
+
+The two pictures show where this is heading. Draft 0.1 of the contract already requires ideas 1, 2, 4 and 6, and is built around 7 and 8. For idea 3 it has one switch per app, and that switch decides what agents are told, not what they can reach; a switch for each part of an app is not there yet. Idea 5 is up to each app today: buttons, switches and drags work, and the pen and the shortcut keys are still plans.
+
+## What the contract asks
+
+An app describes itself in a `launchx.toml` manifest and claims one of three levels. [SPEC.md](SPEC.md) has the full text and two worked examples.
+
+| Level | The app must | What it gets |
+|---|---|---|
+| 0, described | Have a manifest. No code changes. | Start, stop, restart, logs and dependency ordering. |
+| 1, managed | Run in the foreground on the port and token it is handed, and report its health. | A port and a token from the launcher, health on its card, and its page at a stable signed-in address such as `http://vmc.localhost:7600/`. |
+| 2, open | Expose its whole state as JSON and ship a CLI that can do what its page can. | Agents, scripts and other apps can read it and drive it. |
+
+The launcher does the rest. It starts each app in the order its dependencies need, watches its health, keeps its logs, puts every page behind one sign-in, and has the switch that decides whether your agents are told about an app. `lx check <id>` tests an app against the level it claims.
+
+LaunchX is part of [AutoPhD](https://github.com/AutoPhd-org), which builds apps on this contract. Status: contract draft 0.1, working launcher on macOS and Linux; the app is macOS only.
 
 ## Install
 

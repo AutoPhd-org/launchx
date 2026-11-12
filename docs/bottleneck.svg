@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1104" width="1200" height="1104" role="img" aria-labelledby="title desc" font-family='Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif'>
+<title id="title">The bottleneck moved</title>
+<desc id="desc">2023: you write prompts and read answers; the agent executes a few tool calls on software and explores what they return. The agent is the bottleneck: it loses the plan, repeats itself and stops too early. 2026: the agent, wrapped in a harness, plans, calls tools and works for hours. The two links are now the bottleneck. Between you and the agent, everything you see has to become words and you read long answers. Between the agent and the software, screenshots, clicks and file reads burn tokens before the work starts.</desc>
+<style>.f-bg{fill:#f7f8fb} .s-bg{stroke:#f7f8fb} .f-frame{fill:#e6e9f0} .s-frame{stroke:#e6e9f0} .f-card{fill:#ffffff} .s-card{stroke:#ffffff} .f-cardb{fill:#dfe3eb} .s-cardb{stroke:#dfe3eb} .f-panel{fill:#eef1f6} .s-panel{stroke:#eef1f6} .f-panelb{fill:#dfe3eb} .s-panelb{stroke:#dfe3eb} .f-ink{fill:#15171c} .s-ink{stroke:#15171c} .f-ink2{fill:#353a45} .s-ink2{stroke:#353a45} .f-muted{fill:#5b6271} .s-muted{stroke:#5b6271} .f-faint{fill:#8a93a6} .s-faint{stroke:#8a93a6} .f-line{fill:#aab2c2} .s-line{stroke:#aab2c2} .f-you{fill:#3b5bdb} .s-you{stroke:#3b5bdb} .f-yous{fill:#edf1ff} .s-yous{stroke:#edf1ff} .f-youb{fill:#b9c6f5} .s-youb{stroke:#b9c6f5} .f-agent{fill:#6741d9} .s-agent{stroke:#6741d9} .f-agents{fill:#f1edff} .s-agents{stroke:#f1edff} .f-agentb{fill:#cbbdf5} .s-agentb{stroke:#cbbdf5} .f-app{fill:#2b8a3e} .s-app{stroke:#2b8a3e} .f-apps{fill:#eaf6ec} .s-apps{stroke:#eaf6ec} .f-appb{fill:#a9d9b3} .s-appb{stroke:#a9d9b3} .f-hot{fill:#c92a2a} .s-hot{stroke:#c92a2a} .f-hots{fill:#fdecec} .s-hots{stroke:#fdecec} .f-hotb{fill:#f1b0b0} .s-hotb{stroke:#f1b0b0} .f-pen{fill:#c25d00} .s-pen{stroke:#c25d00} .f-on{fill:#ffffff} .s-on{stroke:#ffffff} @media (prefers-color-scheme: dark) { .f-bg{fill:#0f1115} .s-bg{stroke:#0f1115} .f-frame{fill:#22262f} .s-frame{stroke:#22262f} .f-card{fill:#171a21} .s-card{stroke:#171a21} .f-cardb{fill:#2b303b} .s-cardb{stroke:#2b303b} .f-panel{fill:#12151b} .s-panel{stroke:#12151b} .f-panelb{fill:#2b303b} .s-panelb{stroke:#2b303b} .f-ink{fill:#e8eaef} .s-ink{stroke:#e8eaef} .f-ink2{fill:#c3c8d2} .s-ink2{stroke:#c3c8d2} .f-muted{fill:#9aa1ad} .s-muted{stroke:#9aa1ad} .f-faint{fill:#6b7385} .s-faint{stroke:#6b7385} .f-line{fill:#4a5162} .s-line{stroke:#4a5162} .f-you{fill:#8fa5ff} .s-you{stroke:#8fa5ff} .f-yous{fill:#161d38} .s-yous{stroke:#161d38} .f-youb{fill:#34417a} .s-youb{stroke:#34417a} .f-agent{fill:#b197fc} .s-agent{stroke:#b197fc} .f-agents{fill:#1d1838} .s-agents{stroke:#1d1838} .f-agentb{fill:#47397f} .s-agentb{stroke:#47397f} .f-app{fill:#63d47a} .s-app{stroke:#63d47a} .f-apps{fill:#11261a} .s-apps{stroke:#11261a} .f-appb{fill:#2a6b3a} .s-appb{stroke:#2a6b3a} .f-hot{fill:#ff8787} .s-hot{stroke:#ff8787} .f-hots{fill:#2d1516} .s-hots{stroke:#2d1516} .f-hotb{fill:#7d3436} .s-hotb{stroke:#7d3436} .f-pen{fill:#ffa94d} .s-pen{stroke:#ffa94d} .f-on{fill:#0f1115} .s-on{stroke:#0f1115} }</style>
+<defs><marker id="ah-line" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-line"/></marker><marker id="ah-faint" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-faint"/></marker><marker id="ah-muted" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-muted"/></marker><marker id="ah-you" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-you"/></marker><marker id="ah-agent" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-agent"/></marker><marker id="ah-app" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-app"/></marker><marker id="ah-hot" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0.6 L10,5 L0,9.4 z" class="f-hot"/></marker></defs>
+<rect x="1" y="1" width="1198" height="1102" rx="24" class="f-bg s-frame" stroke-width="1.5"/>
+<text x="48" y="54" class="f-you" font-size="12.5" font-weight="800" letter-spacing="2.2">2023 · THEN</text>
+<text x="48" y="91" class="f-ink" font-size="27" font-weight="750" letter-spacing="-0.4">The agent was the bottleneck</text>
+<rect x="1050" y="41" width="26" height="16" rx="8" class="f-hots s-hot" stroke-width="1.6"/>
+<text x="1084" y="54" class="f-muted" font-size="13.5">bottleneck</text>
+<rect x="48" y="174" width="176" height="156" rx="20" class="f-yous s-youb" stroke-width="1.5"/>
+<circle cx="136" cy="205" r="13" class="f-you"/>
+<path d="M113,250 C113,231 123,223 136,223 C149,223 159,231 159,250 Z" class="f-you"/>
+<text x="136" y="284" class="f-ink" font-size="22" font-weight="700" text-anchor="middle">You</text>
+<text x="136" y="307" class="f-muted" font-size="13.5" text-anchor="middle">see, think, decide</text>
+<rect x="976" y="174" width="176" height="156" rx="20" class="f-apps s-appb" stroke-width="1.5"/>
+<rect x="1034" y="194" width="60" height="46" rx="7" class="s-app" fill="none" stroke-width="2.4"/>
+<path d="M1034,207 L1094,207" class="s-app" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1043" cy="200.8" r="2" class="f-app"/>
+<circle cx="1051" cy="200.8" r="2" class="f-app"/>
+<circle cx="1059" cy="200.8" r="2" class="f-app"/>
+<rect x="1043" y="215" width="20.4" height="5" rx="2.5" class="f-app"/>
+<rect x="1043" y="225" width="33.6" height="5" rx="2.5" class="f-app"/>
+<text x="1064" y="284" class="f-ink" font-size="22" font-weight="700" text-anchor="middle">Software</text>
+<text x="1064" y="307" class="f-muted" font-size="13.5" text-anchor="middle">state behind a GUI</text>
+<rect x="236" y="226" width="285" height="18" rx="9" class="f-panel s-line" stroke-width="1.6"/>
+<circle cx="307.25" cy="235" r="3.2" class="f-faint"/>
+<circle cx="378.5" cy="235" r="3.2" class="f-faint"/>
+<circle cx="449.75" cy="235" r="3.2" class="f-faint"/>
+<path d="M521,221 L536,235 L521,249 Z" class="f-faint"/>
+<rect x="251" y="260" width="285" height="18" rx="9" class="f-panel s-line" stroke-width="1.6"/>
+<circle cx="464.75" cy="269" r="3.2" class="f-faint"/>
+<circle cx="393.5" cy="269" r="3.2" class="f-faint"/>
+<circle cx="322.25" cy="269" r="3.2" class="f-faint"/>
+<path d="M251,255 L236,269 L251,283 Z" class="f-faint"/>
+<rect x="664" y="226" width="285" height="18" rx="9" class="f-panel s-line" stroke-width="1.6"/>
+<circle cx="735.25" cy="235" r="3.2" class="f-faint"/>
+<circle cx="806.5" cy="235" r="3.2" class="f-faint"/>
+<circle cx="877.75" cy="235" r="3.2" class="f-faint"/>
+<path d="M949,221 L964,235 L949,249 Z" class="f-faint"/>
+<rect x="679" y="260" width="285" height="18" rx="9" class="f-panel s-line" stroke-width="1.6"/>
+<circle cx="892.75" cy="269" r="3.2" class="f-faint"/>
+<circle cx="821.5" cy="269" r="3.2" class="f-faint"/>
+<circle cx="750.25" cy="269" r="3.2" class="f-faint"/>
+<path d="M679,255 L664,269 L679,283 Z" class="f-faint"/>
+<text x="386" y="215" font-size="14" text-anchor="middle"><tspan class="f-ink" font-weight="700">write</tspan><tspan class="f-muted"> a prompt</tspan></text>
+<text x="386" y="300" font-size="14" text-anchor="middle"><tspan class="f-ink" font-weight="700">read</tspan><tspan class="f-muted"> an answer</tspan></text>
+<text x="814" y="215" font-size="14" text-anchor="middle"><tspan class="f-ink" font-weight="700">executes</tspan><tspan class="f-muted"> a tool call or two</tspan></text>
+<text x="814" y="300" font-size="14" text-anchor="middle"><tspan class="f-ink" font-weight="700">explores</tspan><tspan class="f-muted"> what the tools return</tspan></text>
+<circle cx="600" cy="252" r="52" class="s-hot" fill="none" stroke-width="1.8" stroke-dasharray="3 6"/>
+<circle cx="600" cy="252" r="38" class="f-hots s-hot" stroke-width="2.2"/>
+<text x="600" y="257" class="f-ink" font-size="15" font-weight="700" text-anchor="middle">Agent</text>
+<path d="M392,362 H589 L600,350 L611,362 H808 A14,14 0 0 1 822,376 V474 A14,14 0 0 1 808,488 H392 A14,14 0 0 1 378,474 V376 A14,14 0 0 1 392,362 Z" class="f-hots s-hot" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="396" y="378" width="106" height="22" rx="11" class="f-hot"/>
+<text x="449" y="392.96" class="f-on" font-size="11" font-weight="800" text-anchor="middle" letter-spacing="1.1">BOTTLENECK</text>
+<text x="512" y="393.5" class="f-hot" font-size="11.5" font-weight="800" letter-spacing="1.1">THE AGENT</text>
+<text x="396" y="429" class="f-ink" font-size="17.5" font-weight="700">The agent wasn't smart enough</text>
+<text x="396" y="453" class="f-ink2" font-size="14">It lost the plan, repeated itself and stopped too early.</text>
+<text x="396" y="473" class="f-ink2" font-size="14">A chat box and a few tools were all it could use.</text>
+<text x="386" y="328" class="f-faint" font-size="13.5" text-anchor="middle" font-style="italic">wide enough, for now</text>
+<text x="814" y="328" class="f-faint" font-size="13.5" text-anchor="middle" font-style="italic">wide enough, for now</text>
+<path d="M48,552 L1152,552" class="s-panelb" fill="none" stroke-width="1.5" stroke-dasharray="2 7" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="398.5" y="536" width="403" height="32" rx="16" class="f-card s-cardb" stroke-width="1.3"/>
+<text x="420.5" y="556.8" class="f-muted" font-size="13.5" font-weight="600">three years of better models and better harnesses</text>
+<path d="M777.5,546 v11 m-4.5,-4.5 l4.5,4.5 l4.5,-4.5" class="s-muted" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="48" y="638" class="f-you" font-size="12.5" font-weight="800" letter-spacing="2.2">2026 · NOW</text>
+<text x="48" y="675" class="f-ink" font-size="27" font-weight="750" letter-spacing="-0.4">Now the communication is the bottleneck</text>
+<rect x="1050" y="625" width="26" height="16" rx="8" class="f-hots s-hot" stroke-width="1.6"/>
+<text x="1084" y="638" class="f-muted" font-size="13.5">bottleneck</text>
+<rect x="48" y="758" width="176" height="156" rx="20" class="f-yous s-youb" stroke-width="1.5"/>
+<circle cx="136" cy="789" r="13" class="f-you"/>
+<path d="M113,834 C113,815 123,807 136,807 C149,807 159,815 159,834 Z" class="f-you"/>
+<text x="136" y="868" class="f-ink" font-size="22" font-weight="700" text-anchor="middle">You</text>
+<text x="136" y="891" class="f-muted" font-size="13.5" text-anchor="middle">see, think, decide</text>
+<rect x="976" y="758" width="176" height="156" rx="20" class="f-apps s-appb" stroke-width="1.5"/>
+<rect x="1034" y="778" width="60" height="46" rx="7" class="s-app" fill="none" stroke-width="2.4"/>
+<path d="M1034,791 L1094,791" class="s-app" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1043" cy="784.8" r="2" class="f-app"/>
+<circle cx="1051" cy="784.8" r="2" class="f-app"/>
+<circle cx="1059" cy="784.8" r="2" class="f-app"/>
+<rect x="1043" y="799" width="20.4" height="5" rx="2.5" class="f-app"/>
+<rect x="1043" y="809" width="33.6" height="5" rx="2.5" class="f-app"/>
+<text x="1064" y="868" class="f-ink" font-size="22" font-weight="700" text-anchor="middle">Software</text>
+<text x="1064" y="891" class="f-muted" font-size="13.5" text-anchor="middle">state behind a GUI</text>
+<path d="M236,828 L236,774 C256,774 258,810 284,810 L457,810 L457,828 Z" class="f-hots s-hot" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="245" cy="820" r="3.4" class="f-hot"/>
+<circle cx="245" cy="807" r="3.4" class="f-hot"/>
+<circle cx="245" cy="794" r="3.4" class="f-hot"/>
+<circle cx="245" cy="782" r="3.4" class="f-hot"/>
+<circle cx="256" cy="817" r="3.4" class="f-hot"/>
+<circle cx="257" cy="804" r="3.4" class="f-hot"/>
+<circle cx="267" cy="820" r="3.4" class="f-hot"/>
+<circle cx="269" cy="810" r="3.4" class="f-hot"/>
+<circle cx="280" cy="822" r="3.4" class="f-hot"/>
+<circle cx="306" cy="819" r="3.4" class="f-hot"/>
+<circle cx="340" cy="819" r="3.4" class="f-hot"/>
+<path d="M457,805 L472,819 L457,833 Z" class="f-hot"/>
+<path d="M472,844 L472,898 C452,898 450,862 424,862 L251,862 L251,844 Z" class="f-hots s-hot" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="463" cy="852" r="3.4" class="f-hot"/>
+<circle cx="463" cy="865" r="3.4" class="f-hot"/>
+<circle cx="463" cy="878" r="3.4" class="f-hot"/>
+<circle cx="463" cy="890" r="3.4" class="f-hot"/>
+<circle cx="452" cy="855" r="3.4" class="f-hot"/>
+<circle cx="451" cy="868" r="3.4" class="f-hot"/>
+<circle cx="441" cy="852" r="3.4" class="f-hot"/>
+<circle cx="439" cy="862" r="3.4" class="f-hot"/>
+<circle cx="428" cy="850" r="3.4" class="f-hot"/>
+<circle cx="402" cy="853" r="3.4" class="f-hot"/>
+<circle cx="368" cy="853" r="3.4" class="f-hot"/>
+<path d="M251,839 L236,853 L251,867 Z" class="f-hot"/>
+<path d="M728,828 L728,774 C748,774 750,810 776,810 L949,810 L949,828 Z" class="f-hots s-hot" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="737" cy="820" r="3.4" class="f-hot"/>
+<circle cx="737" cy="807" r="3.4" class="f-hot"/>
+<circle cx="737" cy="794" r="3.4" class="f-hot"/>
+<circle cx="737" cy="782" r="3.4" class="f-hot"/>
+<circle cx="748" cy="817" r="3.4" class="f-hot"/>
+<circle cx="749" cy="804" r="3.4" class="f-hot"/>
+<circle cx="759" cy="820" r="3.4" class="f-hot"/>
+<circle cx="761" cy="810" r="3.4" class="f-hot"/>
+<circle cx="772" cy="822" r="3.4" class="f-hot"/>
+<circle cx="798" cy="819" r="3.4" class="f-hot"/>
+<circle cx="832" cy="819" r="3.4" class="f-hot"/>
+<path d="M949,805 L964,819 L949,833 Z" class="f-hot"/>
+<path d="M964,844 L964,898 C944,898 942,862 916,862 L743,862 L743,844 Z" class="f-hots s-hot" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="955" cy="852" r="3.4" class="f-hot"/>
+<circle cx="955" cy="865" r="3.4" class="f-hot"/>
+<circle cx="955" cy="878" r="3.4" class="f-hot"/>
+<circle cx="955" cy="890" r="3.4" class="f-hot"/>
+<circle cx="944" cy="855" r="3.4" class="f-hot"/>
+<circle cx="943" cy="868" r="3.4" class="f-hot"/>
+<circle cx="933" cy="852" r="3.4" class="f-hot"/>
+<circle cx="931" cy="862" r="3.4" class="f-hot"/>
+<circle cx="920" cy="850" r="3.4" class="f-hot"/>
+<circle cx="894" cy="853" r="3.4" class="f-hot"/>
+<circle cx="860" cy="853" r="3.4" class="f-hot"/>
+<path d="M743,839 L728,853 L743,867 Z" class="f-hot"/>
+<text x="292" y="799" font-size="14"><tspan class="f-ink" font-weight="700">write</tspan><tspan class="f-muted"> everything, in words</tspan></text>
+<text x="416" y="884" font-size="14" text-anchor="end"><tspan class="f-ink" font-weight="700">read</tspan><tspan class="f-muted"> long answers</tspan></text>
+<text x="784" y="799" font-size="14"><tspan class="f-ink" font-weight="700">executes</tspan><tspan class="f-muted"> click by click</tspan></text>
+<text x="908" y="884" font-size="14" text-anchor="end"><tspan class="f-ink" font-weight="700">explores</tspan><tspan class="f-muted"> screenshots, files</tspan></text>
+<circle cx="600" cy="836" r="111" class="s-agentb" fill="none" stroke-width="9"/>
+<circle cx="600" cy="836" r="100" class="f-agents s-agent" stroke-width="2.2"/>
+<rect x="558" y="714" width="78" height="21" rx="10.5" class="f-agent"/>
+<text x="597" y="728.28" class="f-on" font-size="10.5" font-weight="800" text-anchor="middle" letter-spacing="1.1">HARNESS</text>
+<path d="M600,771 Q600,786 615,786 Q600,786 600,801 Q600,786 585,786 Q600,786 600,771 Z" class="f-agent"/>
+<text x="600" y="832" class="f-ink" font-size="28" font-weight="750" text-anchor="middle">Agent</text>
+<text x="600" y="858" class="f-ink2" font-size="14.5" text-anchor="middle">plans, calls tools,</text>
+<text x="600" y="878" class="f-ink2" font-size="14.5" text-anchor="middle">works for hours</text>
+<path d="M62,946 H343 L354,934 L365,946 H458 A14,14 0 0 1 472,960 V1058 A14,14 0 0 1 458,1072 H62 A14,14 0 0 1 48,1058 V960 A14,14 0 0 1 62,946 Z" class="f-hots s-hot" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="66" y="962" width="106" height="22" rx="11" class="f-hot"/>
+<text x="119" y="976.96" class="f-on" font-size="11" font-weight="800" text-anchor="middle" letter-spacing="1.1">BOTTLENECK</text>
+<text x="182" y="977.5" class="f-hot" font-size="11.5" font-weight="800" letter-spacing="1.1">YOU ↔ AGENT</text>
+<text x="66" y="1013" class="f-ink" font-size="17.5" font-weight="700">What you see has to become words</text>
+<text x="66" y="1037" class="f-ink2" font-size="14">You describe your screen in sentences, then dig</text>
+<text x="66" y="1057" class="f-ink2" font-size="14">through a long reply for the one line you need.</text>
+<path d="M742,946 H835 L846,934 L857,946 H1138 A14,14 0 0 1 1152,960 V1058 A14,14 0 0 1 1138,1072 H742 A14,14 0 0 1 728,1058 V960 A14,14 0 0 1 742,946 Z" class="f-hots s-hot" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="746" y="962" width="106" height="22" rx="11" class="f-hot"/>
+<text x="799" y="976.96" class="f-on" font-size="11" font-weight="800" text-anchor="middle" letter-spacing="1.1">BOTTLENECK</text>
+<text x="862" y="977.5" class="f-hot" font-size="11.5" font-weight="800" letter-spacing="1.1">AGENT ↔ SOFTWARE</text>
+<text x="746" y="1013" class="f-ink" font-size="17.5" font-weight="700">The agent rebuilds the app's state</text>
+<text x="746" y="1037" class="f-ink2" font-size="14">Screenshots, clicks and file reads burn tokens</text>
+<text x="746" y="1057" class="f-ink2" font-size="14">before the work you asked for even starts.</text>
+<text x="600" y="994" class="f-faint" font-size="13.5" text-anchor="middle" font-style="italic">models and harnesses</text>
+<text x="600" y="1013" class="f-faint" font-size="13.5" text-anchor="middle" font-style="italic">keep getting better</text>
+</svg>
