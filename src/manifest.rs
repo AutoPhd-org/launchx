@@ -54,6 +54,8 @@ pub struct ServiceDef {
     pub http: Option<HttpDef>,
     #[serde(default)]
     pub agents: Option<AgentsDef>,
+    #[serde(default)]
+    pub memory: Option<MemoryDef>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -81,6 +83,17 @@ pub struct AgentsDef {
     /// A document for agents: the state document's shape and the actions.
     #[serde(default)]
     pub docs: Option<String>,
+}
+
+/// `[service.<id>.memory]`: the access to the shared memory the service asks
+/// for, and why (contract §4.8). The user decides; this only explains.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryDef {
+    #[serde(default)]
+    pub wants: crate::memory::Access,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -406,6 +419,7 @@ mod tests {
             icon: None,
             http: None,
             agents: None,
+            memory: None,
         }
     }
 

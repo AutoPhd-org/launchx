@@ -3,7 +3,8 @@
 //! Hosts on the gateway port:
 //! - `launchx.localhost` — the launcher's UI and API (browser session or bearer token)
 //! - `<id>.localhost`    — service `<id>`, proxied with its bearer token
-//! - `127.0.0.1`, `localhost` — the launcher API for programs (bearer token only)
+//! - `127.0.0.1`, `localhost` — the launcher API for programs (bearer token only),
+//!   and the shared memory for services (their memory token, §12.3)
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -27,6 +28,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, watch};
 
 use crate::manifest;
+use crate::memory::{self, Access, Who};
 use crate::supervisor::{Event, Launcher};
 use crate::util;
 
@@ -199,6 +201,14 @@ impl App {
 
     async fn on_direct(self: Arc<Self>, request: Request) -> Response {
         if !self.bearer_ok(request.headers()) {
+            // A service's memory token opens the shared memory, and nothing else (§12.3).
+            if let Some(caller) = bearer(request.headers()).and_then(|token| self.launcher.memory_caller(token)) {
+                let path = request.uri().path().to_string();
+                return match path.strip_prefix("/api/memory") {
+                    Some(rest) if rest.is_empty() || rest.starts_with('/') => self.memory(request, caller, rest).await,
+                    _ => error(StatusCode::FORBIDDEN, "A memory token opens /api/memory and nothing else"),
+                };
+            }
             if request.method() == Method::GET && request.uri().path() == "/" && wants_html(request.headers()) {
                 return redirect(&self.launcher.config.launcher_url());
             }
@@ -241,6 +251,30 @@ impl App {
                     None => error(StatusCode::BAD_REQUEST, "Send {\"discoverable\": true} or {\"discoverable\": false}"),
                 }
             }
+            (&Method::POST, ["api", "services", id, "memory"]) => {
+                let id = id.to_string();
+                if !launcher.has_service(&id) {
+                    return error(StatusCode::NOT_FOUND, &format!("Unknown service '{id}'"));
+                }
+                match read_json(request).await.get("access").and_then(Value::as_str).and_then(Access::parse) {
+                    Some(access) => match launcher.set_memory_access(&id, access) {
+                        Ok(reply) => json_response(StatusCode::OK, reply),
+                        Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, &message),
+                    },
+                    None => error(StatusCode::BAD_REQUEST, "Send {\"access\": \"none\"}, {\"access\": \"read\"} or {\"access\": \"write\"}"),
+                }
+            }
+            (&Method::POST, ["api", "memory", "agents"]) => match read_json(request).await.get("access").and_then(Value::as_str).and_then(Access::parse) {
+                Some(access) => match launcher.set_agents_memory(access) {
+                    Ok(reply) => json_response(StatusCode::OK, reply),
+                    Err(message) => error(StatusCode::INTERNAL_SERVER_ERROR, &message),
+                },
+                None => error(StatusCode::BAD_REQUEST, "Send {\"access\": \"none\"}, {\"access\": \"read\"} or {\"access\": \"write\"}"),
+            },
+            (_, ["api", "memory", ..]) => {
+                let rest = path.strip_prefix("/api/memory").unwrap_or("").to_string();
+                self.memory(request, Who::User, &rest).await
+            }
             (&Method::POST, ["api", "services", id, action]) => {
                 let id = id.to_string();
                 match *action {
@@ -278,6 +312,28 @@ impl App {
         }
     }
 
+    /// The shared memory API (§12.4), for the user or for a service.
+    async fn memory(&self, request: Request, who: Who, rest: &str) -> Response {
+        let method = request.method().as_str().to_string();
+        let query = query(request.uri());
+        let body = if matches!(method.as_str(), "PUT" | "POST" | "DELETE") { read_json_limit(request, 512 * 1024).await } else { json!({}) };
+        let segments: Vec<String> = rest.trim_start_matches('/').split('/').map(str::to_string).collect();
+        let launcher = self.launcher.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
+            let (status, value) = memory::api(&launcher.memory, &who, &method, &segments, &query, &body);
+            if status == 200 && method != "GET" {
+                launcher.memory_changed();
+            }
+            (status, value)
+        })
+        .await;
+        match outcome {
+            Ok((status, value)) => json_response(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), value),
+            Err(failure) => error(StatusCode::INTERNAL_SERVER_ERROR, &format!("memory: {failure}")),
+        }
+    }
+
     fn events(&self) -> Response {
         let receiver = self.launcher.events.subscribe();
         let mut shutdown = self.shutdown.subscribe();
@@ -285,6 +341,7 @@ impl App {
             let event = match receiver.recv().await {
                 Ok(Event::Change(id)) => SseEvent::default().event("change").data(json!({ "keys": ["services"], "id": id }).to_string()),
                 Ok(Event::Log { id, line }) => SseEvent::default().event("log").data(json!({ "id": id, "line": line }).to_string()),
+                Ok(Event::Memory) => SseEvent::default().event("change").data(r#"{"keys":["memory"]}"#),
                 Err(broadcast::error::RecvError::Lagged(_)) => SseEvent::default().event("change").data(r#"{"keys":["services"]}"#),
                 Err(broadcast::error::RecvError::Closed) => return None,
             };
@@ -544,7 +601,11 @@ fn encode(text: &str) -> String {
 }
 
 async fn read_json(request: Request) -> Value {
-    let Ok(body) = http_body_util::Limited::new(request.into_body(), 64 * 1024).collect().await else { return json!({}) };
+    read_json_limit(request, 64 * 1024).await
+}
+
+async fn read_json_limit(request: Request, limit: usize) -> Value {
+    let Ok(body) = http_body_util::Limited::new(request.into_body(), limit).collect().await else { return json!({}) };
     serde_json::from_slice(&body.to_bytes()).unwrap_or_else(|_| json!({}))
 }
 

@@ -22,7 +22,7 @@ use tokio::sync::{broadcast, watch};
 
 use crate::home::{Assigned, Config, Home, Persisted, RunFile};
 use crate::manifest::{self, HttpDef, Restart, Service, ServiceDef};
-use crate::{agents, platform, util};
+use crate::{agents, memory, platform, util};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOG_LIMIT: u64 = 5 * 1024 * 1024;
@@ -82,6 +82,8 @@ impl Default for Runtime {
 pub enum Event {
     Change(String),
     Log { id: String, line: String },
+    /// The shared memory changed (contract §12).
+    Memory,
 }
 
 struct Control {
@@ -113,6 +115,8 @@ pub struct Launcher {
     pub config: Config,
     pub started_at: String,
     pub events: broadcast::Sender<Event>,
+    /// The user's shared memory (contract §12).
+    pub memory: memory::Store,
     inner: Mutex<Inner>,
     /// Serialises publishing to the agents' skill folders.
     publishing: Mutex<()>,
@@ -162,7 +166,9 @@ impl Launcher {
             entries.insert(service.id.clone(), Entry { service, rt: Runtime::default(), control: None, log });
         }
         let (events, _) = broadcast::channel(1024);
+        let memory = memory::Store::new(home.memory_dir());
         let launcher = Arc::new(Launcher {
+            memory,
             home,
             config,
             started_at: util::now_rfc3339(),
@@ -413,6 +419,7 @@ impl Launcher {
                 inner.persisted.services.remove(id);
                 inner.persisted.running.remove(id);
                 inner.persisted.agents.remove(id);
+                inner.persisted.memory.remove(id);
             }
             for service in services {
                 match inner.entries.get_mut(&service.id) {
@@ -436,11 +443,12 @@ impl Launcher {
     /// Bring the agents' skill folders in line with the services and switches.
     pub fn publish_agents(&self) {
         let _publishing = self.publishing.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let (services, discoverable) = {
+        let (services, discoverable, memory_access) = {
             let inner = self.lock();
-            (inner.entries.values().map(|e| e.service.clone()).collect::<Vec<_>>(), inner.persisted.agents.clone())
+            (inner.entries.values().map(|e| e.service.clone()).collect::<Vec<_>>(), inner.persisted.agents.clone(), inner.persisted.memory_agents)
         };
-        let published = agents::publish(&self.home, &self.config, &services, &discoverable);
+        let memory_skill = memory_access.can_read().then(|| memory::skill(&self.memory, memory_access));
+        let published = agents::publish(&self.home, &self.config, &services, &discoverable, memory_skill.as_deref());
         {
             let mut inner = self.lock();
             inner.agent_skills = published.skills;
@@ -463,6 +471,67 @@ impl Launcher {
         }
         self.publish_agents();
         Ok(json!({ "id": id, "discoverable": on, "problems": self.lock().agent_problems }))
+    }
+
+    // --- Shared memory (§12) ----------------------------------------------
+
+    /// The user's choice: what service `id` may do with the shared memory.
+    pub fn set_memory_access(&self, id: &str, access: memory::Access) -> Result<Value, String> {
+        {
+            let mut inner = self.lock();
+            if !inner.entries.contains_key(id) {
+                return Err(format!("Unknown service '{id}'"));
+            }
+            let before = inner.persisted.memory.get(id).copied().unwrap_or_default();
+            if before != access {
+                if access == memory::Access::None {
+                    inner.persisted.memory.remove(id);
+                } else {
+                    inner.persisted.memory.insert(id.to_string(), access);
+                }
+                self.home.save_state(&inner.persisted).map_err(|e| format!("{e:#}"))?;
+            }
+        }
+        self.changed(id);
+        let _ = self.events.send(Event::Memory);
+        Ok(json!({ "id": id, "access": access.as_str() }))
+    }
+
+    /// The user's choice: what their agents are told they may do with the shared memory.
+    pub fn set_agents_memory(&self, access: memory::Access) -> Result<Value, String> {
+        {
+            let mut inner = self.lock();
+            if inner.persisted.memory_agents != access {
+                inner.persisted.memory_agents = access;
+                self.home.save_state(&inner.persisted).map_err(|e| format!("{e:#}"))?;
+            }
+        }
+        self.publish_agents();
+        let _ = self.events.send(Event::Memory);
+        Ok(json!({ "agents": access.as_str(), "problems": self.lock().agent_problems }))
+    }
+
+    /// The service a memory token belongs to, with the access the user gave it.
+    pub fn memory_caller(&self, token: &str) -> Option<memory::Who> {
+        let inner = self.lock();
+        let mut found = None;
+        for (id, assigned) in &inner.persisted.services {
+            // Compare every one, so the time taken does not say which matched.
+            if !assigned.memory_token.is_empty() & util::same(token, &assigned.memory_token) && inner.entries.contains_key(id) {
+                found = Some(id.clone());
+            }
+        }
+        let id = found?;
+        let access = inner.persisted.memory.get(&id).copied().unwrap_or_default();
+        Some(memory::Who::App { id, access })
+    }
+
+    /// After a write: tell the page, and refresh what agents are told memory holds.
+    pub fn memory_changed(&self) {
+        let _ = self.events.send(Event::Memory);
+        if self.lock().persisted.memory_agents.can_read() {
+            self.publish_agents();
+        }
     }
 
     /// What agents are told: `GET /api/agents`.
@@ -565,6 +634,11 @@ impl Launcher {
                         "discoverable": inner.persisted.agents.contains(id),
                         "skills": inner.agent_skills.get(id).cloned().unwrap_or_default(),
                     },
+                    "memory": {
+                        "access": inner.persisted.memory.get(id).copied().unwrap_or_default(),
+                        "wants": def.memory.as_ref().map(|m| m.wants),
+                        "reason": def.memory.as_ref().and_then(|m| m.reason.clone()),
+                    },
                 })
             })
             .collect();
@@ -578,6 +652,11 @@ impl Launcher {
             },
             "errors": inner.errors.iter().chain(&inner.agent_problems).collect::<Vec<_>>(),
             "services": services,
+            "memory": {
+                "agents": inner.persisted.memory_agents,
+                "pages": self.memory.count(),
+                "dir": self.memory.root,
+            },
         })
     }
 
@@ -729,10 +808,14 @@ impl Launcher {
         let mut assigned = inner.persisted.services.get(id).cloned();
         let mut dirty = false;
         if assigned.is_none() {
-            assigned = Some(Assigned { port: 0, token: util::token() });
+            assigned = Some(Assigned { port: 0, token: util::token(), memory_token: String::new() });
             dirty = true;
         }
         let mut assigned = assigned.unwrap();
+        if assigned.memory_token.is_empty() {
+            assigned.memory_token = util::token();
+            dirty = true;
+        }
         let mut port = None;
         if let Some(http) = &service.def.http {
             let wanted = if assigned.port != 0 { assigned.port } else { http.port.unwrap_or(0) };
@@ -761,7 +844,8 @@ impl Launcher {
             })
             .collect();
         drop(inner);
-        build_launch(&service, port, &assigned.token, &self.env, &deps, &self.config)
+        let memory = (format!("http://127.0.0.1:{}/api/memory", self.config.gateway_port), assigned.memory_token.clone());
+        build_launch(&service, port, &assigned.token, &self.env, &deps, Some(&memory), &self.config)
     }
 
     async fn run_once(self: &Arc<Self>, id: &str, launch: Launch, stop: &mut watch::Receiver<bool>) -> Outcome {
@@ -941,6 +1025,7 @@ pub fn build_launch(
     token: &str,
     base_env: &[(String, String)],
     deps: &[(String, String, String)],
+    memory: Option<&(String, String)>,
     config: &Config,
 ) -> Result<Launch, String> {
     let host = "127.0.0.1";
@@ -962,6 +1047,10 @@ pub fn build_launch(
         env.push(("LAUNCHX_PORT".into(), port.to_string()));
         env.push(("LAUNCHX_TOKEN".into(), token.to_string()));
         env.push(("LAUNCHX_URL".into(), config.service_url(&service.id).trim_end_matches('/').to_string()));
+    }
+    if let Some((url, memory_token)) = memory {
+        env.push(("LAUNCHX_MEMORY_URL".into(), url.clone()));
+        env.push(("LAUNCHX_MEMORY_TOKEN".into(), memory_token.clone()));
     }
     for (dep, url, dep_token) in deps {
         let key = dep.to_uppercase().replace('-', "_");

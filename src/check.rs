@@ -80,7 +80,7 @@ pub async fn check(home: &Home, config: &Config, id: &str, as_json: bool) -> any
     // Dependencies: borrow the running ones' addresses, if any.
     let deps: Vec<(String, String, String)> =
         def.requires.iter().filter_map(|dep| home.read_run(dep).map(|run| (dep.clone(), run.url, run.token))).collect();
-    let launch = match supervisor::build_launch(&service, port, &token, &base, &deps, config) {
+    let launch = match supervisor::build_launch(&service, port, &token, &base, &deps, None, config) {
         Ok(launch) => launch,
         Err(message) => bail!("{id} cannot start: {message}"),
     };

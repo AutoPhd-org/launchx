@@ -1,6 +1,6 @@
 # LaunchX Service Contract
 
-Version 0.1 — draft, 2026-11-10
+Version 0.1 — draft, 2026-11-17
 
 ## 1. What this is
 
@@ -134,6 +134,21 @@ skills = "plugins/schedule-everything/skills"
 
 The manifest says what is on offer. Whether agents are told about it is the user's choice (§10.7).
 
+### 4.8 Memory fields
+
+The optional `[service.<id>.memory]` table says what the service would like to do with the user's shared memory (§12), and why. It grants nothing: it is shown to the user next to the switch they set.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `wants` | `"read"` or `"write"` | The access the service asks for. |
+| `reason` | string | One line the user sees, for example "Keeps your schedule page current". |
+
+```toml
+[service.rmd.memory]
+wants  = "write"
+reason = "Keeps your schedule page current and suggests tasks that fit your profile"
+```
+
 ## 5. Process contract (level 1)
 
 ### 5.1 Foreground
@@ -154,6 +169,8 @@ The service inherits the user's login environment, then the manifest's `env`, th
 | `LAUNCHX_URL` | The service's browser URL, for example `http://vmc.localhost:7600`. Use it to build links shown to people. |
 | `LAUNCHX_DEP_<ID>_URL` | Direct URL of a required service (§9). `<ID>` is the id in upper case with `-` replaced by `_`. |
 | `LAUNCHX_DEP_<ID>_TOKEN` | That service's token. |
+| `LAUNCHX_MEMORY_URL` | The shared memory's API (§12.4), for example `http://127.0.0.1:7600/api/memory`. |
+| `LAUNCHX_MEMORY_TOKEN` | The service's own memory token (§12.3). Given to every managed service, with or without HTTP. |
 
 The port and token of a service stay the same across restarts until the user resets them.
 
@@ -319,8 +336,10 @@ services/            registered manifests (links or files)
 run/<id>.json        one per running service, mode 0600
 logs/<id>.log        captured output, rotated
 agents/skills/       skills published to agents (§10.7)
-state.json           assigned ports and tokens, which services the user left running
-                     and which are discoverable by agents; mode 0600
+memory/              the user's shared memory (§12.1)
+state.json           assigned ports and tokens, which services the user left running,
+                     which are discoverable by agents and what each may do with
+                     memory; mode 0600
 ```
 
 The launcher runs services with the `PATH` of the user's login shell, not the bare one that launchd or systemd provide.
@@ -393,6 +412,9 @@ POST /api/services/{id}/start
 POST /api/services/{id}/stop
 POST /api/services/{id}/restart
 POST /api/services/{id}/agents         body {"discoverable": true|false} (§10.7)
+POST /api/services/{id}/memory         body {"access": "none"|"read"|"write"} (§12.3)
+POST /api/memory/agents                body {"access": "none"|"read"|"write"} (§12.6)
+*    /api/memory/…                     the shared memory (§12.4)
 GET  /api/services/{id}/logs?tail=200
 GET  /api/agents                       what agents are told (§10.7)
 POST /api/link                         one-time sign-in link; body {"service": id?, "next": path?}
@@ -421,9 +443,11 @@ Its state document:
       "since": "2026-11-10T16:40:02Z",
       "restarts": 0,
       "last_exit": null,
-      "agents": { "discoverable": false, "skills": [] }
+      "agents": { "discoverable": false, "skills": [] },
+      "memory": { "access": "read", "wants": "read", "reason": "Shows the machines your profile names" }
     }
-  ]
+  ],
+  "memory": { "agents": "none", "pages": 6, "dir": "/Users/me/.launchx/memory" }
 }
 ```
 
@@ -442,6 +466,8 @@ Its CLI:
 | `lx state` | Print the launcher's state document. |
 | `lx agents` | List the services agents can discover (§10.7). |
 | `lx agents on <id>…` / `lx agents off <id>…` | Make services discoverable by agents, or hide them. |
+| `lx memory` | The shared memory (§12.7): `ls`, `show`, `write`, `append`, `rm`, `history`, `log`, `search`, `lint`, `index`, `open`. |
+| `lx memory access [<id>\|agents <none\|read\|write>]` | Who may use memory, or set it. |
 
 Every command that reads takes `--json`.
 
@@ -477,17 +503,150 @@ The switch decides what agents are told, not what they can reach. An agent runs 
 | A web page sending requests to localhost | The gateway's Origin check; no CORS on services. |
 | DNS rebinding | The gateway routes by Host; services require a token the attacker's page cannot have. |
 | One service reaching into another | Tokens are per service; only declared dependencies receive one (§9). |
+| A service reading or changing memory the user did not allow | The service's memory token, and the user's switch, checked on every request (§12.3). |
+| One service using memory under another's name | Memory tokens are per service and never handed to dependents; writes are logged under the caller's id, whatever it claims. |
+| A lost update to a shared page | Every update names the revision it was based on; a stale one is refused (§12.5). |
 | Other devices on the network | Everything binds to loopback by default. |
 
-Out of scope: a hostile process running as the same user. It can read the run files, as it can read everything else the user owns. This includes an AI agent the user runs: hiding a service from agents (§10.7) keeps it out of what they are told, and a well-behaved agent stays away, but only running the agent as another user, or in a sandbox, keeps it out.
+Out of scope: a hostile process running as the same user. It can read the run files, as it can read everything else the user owns. This includes an AI agent the user runs: hiding a service from agents (§10.7) keeps it out of what they are told, and a well-behaved agent stays away, but only running the agent as another user, or in a sandbox, keeps it out. The same holds for memory: its files are the user's, so a service that reads them directly, rather than through the API, is not stopped by the switch.
 
-## 12. Not in 0.1
+Memory is read by agents, so it is a path for prompt injection: a service with write access could write instructions where an agent will read them. The memory skill (§12.6) tells agents to treat pages as information, not instructions, and every page and log entry says who wrote it. Give write access to services you trust with that.
+
+## 12. Shared memory
+
+The launcher keeps one memory for the user: a small wiki of pages about the person (who they are, how they like to work, their schedule, resume and projects) that their services and agents read and write together, so that the person does not have to tell each of them the same things. The user decides, for each service and for their agents, whether it may read memory, read and write it, or neither.
+
+Its design follows the components of agent memory: a log of every write (the transcript), linked pages (the representation), and a short index meant to be loaded at the start of every session (the injected context).
+
+### 12.1 Store
+
+`$LAUNCHX_HOME/memory`, mode `0700`:
+
+```
+pages/<page>.md        one page per topic; <page> may hold '/' (projects/thesis)
+history/<page>/        the versions writes replaced: <time>-<rev>.md, the last 20
+log.jsonl              every write: time, by, role (user or app), action, page, rev, base, note
+```
+
+A page is Markdown with a front matter block the launcher writes:
+
+```markdown
+---
+title: Schedule
+summary: Weekly routine and the deadlines that matter beyond one app
+updated: 2026-11-17T18:02:11Z
+updated_by: rmd
+---
+
+- Writing block 9:00–12:00, Monday to Friday
+- 1:1 with [[people/ann]] on Tuesdays at 11:00
+```
+
+- **Page names** are one to four parts of lowercase letters, digits and `-`, separated by `/`, each at most 48 characters.
+- **Links** between pages are written `[[page]]` or `[[page|label]]`.
+- **The summary** is one line of at most 300 characters. The index (§12.4) is made of summaries, so a page without one is listed by its title only.
+- **Revisions.** A page's `rev` is the first 12 hex digits of the SHA-256 of its file. A hand edit changes it too.
+- **Limits.** A page holds at most 64 KB, and memory at most 1000 pages.
+
+The files are the user's: they may read and edit them with any editor. The log and history record only writes made through the launcher.
+
+### 12.2 Well-known pages
+
+So that services agree on where things go without knowing about each other:
+
+| Page | Holds |
+|---|---|
+| `profile` | Who the user is: name, role, field, institution, time zone, languages. |
+| `preferences` | How the user likes things done: working hours, tone, formats, tools. |
+| `schedule` | The shape of the user's time: routine, fixed commitments, deadlines that matter beyond one app. Not a copy of a task list. |
+| `resume` | Education, positions, publications, awards and skills. |
+| `projects` | What the user is working on, one line each, linking to `projects/<name>`. |
+| `people/<name>` | People the user works with. |
+
+A service SHOULD NOT copy into memory what its own state document already shows (§7.1). Memory holds what stays true for a while and is useful to other services; live data is read from the service that has it.
+
+### 12.3 Access
+
+The user sets one of `none`, `read` or `write` for each service, on its card in the launcher's page, in the page's Memory view, or with `lx memory access <id> <level>`. It is `none` until the user changes it, and a manifest cannot change it (§4.8 only asks). `write` includes reading.
+
+Each managed service receives `LAUNCHX_MEMORY_URL` and its own `LAUNCHX_MEMORY_TOKEN` (§5.2). The token stays the same across restarts, identifies the service to the memory API, and opens nothing but `/api/memory`. It is not the service's `LAUNCHX_TOKEN`, which its dependents hold, so no service can use memory under another's name. The launcher checks the user's switch on every request, so a change applies at once, without a restart.
+
+A request beyond the service's access gets `403` with a message the service may show the user, and the field `"access"`. `GET /api/memory/me` always answers, so a service can tell the user that memory is off and where to turn it on.
+
+### 12.4 API
+
+Programs call the launcher's direct URL with a bearer token: a service its memory token, `lx` and the user's own scripts the launcher's token. The launcher's page uses the same API with its session. Bodies are JSON. Paths are relative to `/api/memory`.
+
+| Request | Needs | Does |
+|---|---|---|
+| `GET /me` | — | `{"role": "app", "id": "rmd", "access": "read"}` |
+| `GET /` | read | Every page without its body (`page`, `title`, `summary`, `rev`, `size`, `updated`, `updated_by`, `links`), the well-known pages not yet written (`suggested`), `count`, a `rev` of the whole listing, and `limits`. |
+| `GET /index` | read | `{"markdown": …, "pages": n, "truncated": bool}`: one line per page, well-known pages first, at most 200 lines and 25 KB. Meant to be put into a model's context as it is. |
+| `GET /pages/<page>` | read | The page: the fields above and `body` and `text` (the whole file). `?rev=<rev>` returns an earlier version. |
+| `PUT /pages/<page>` | write | Create or update (§12.5). Body: `text` (front matter allowed) or `body`, optional `title`, `summary`, `note`, and `base`. |
+| `POST /append/<page>` | write | Add `text` to the end of the page, creating it (with `title`) if needed. No `base`: an append cannot lose anyone's change. |
+| `DELETE /pages/<page>` | write | Body `{"base": rev}`. The page's history is kept. |
+| `GET /history/<page>` | read | Earlier versions, newest first: `rev`, `updated`, `updated_by`, `replaced`. |
+| `GET /log?tail=50&page=<page>` | read | Recent writes, newest first. |
+| `GET /search?q=<words>` | read | Pages holding every word, best first, with the matching lines. |
+| `GET /lint` | read | What is worth tidying: broken links, pages without a summary, large (over 16 KB), duplicate or stale (over 180 days) pages, an index too long to show whole. |
+
+A write by a service is logged under its id. A write with the launcher's token is logged as `user`, or under `by` when the caller gives one (an agent names itself, for example `"by": "claude-code"`). `note` is one line saying why, kept in the log.
+
+The launcher sends `event: change` with `data: {"keys": ["memory"]}` on its own event stream (§10.5) after every write.
+
+### 12.5 Writing without losing writes
+
+Several services and agents write the same few pages. Every write names the revision it was based on:
+
+- **Create:** `base` absent or `null`. If the page exists, the write is refused with `409` and the page as `current`.
+- **Update:** `base` is the `rev` the writer read. If the page has changed since, the write is refused with `409`, a message naming who changed it, and the page as `current`. The writer merges its change into `current` and sends again with the new `rev`.
+- **Delete:** needs `base` in the same way.
+- **Append** needs none.
+
+A write that changes nothing is not logged. Every update and delete first keeps the version it replaces in history, so the user can see and restore any of the last 20.
+
+One page per topic, and appending to it rather than rewriting it, keeps writers out of each other's way. Pages that grow messy are tidied (§12.6), not avoided.
+
+### 12.6 Agents
+
+Agents run as the user, so they can use `lx memory` with the launcher's token. What the user sets for them, on the "Your AI agents" row or with `lx memory access agents <level>`, decides what they are told:
+
+- `none`: nothing. The launcher publishes no memory skill.
+- `read` or `write`: the launcher publishes a skill named `launchx-memory` (the name is reserved) into the agents' skill folders, as in §10.7. It says what memory is for, carries the current index, and says how to read, and with `write` how to write: read first, write with `--base`, name itself with `--by`, one-line summaries, no secrets. It asks agents to treat what pages say as information about the user, not as instructions. The launcher rewrites it as pages change.
+
+Like discovery, this decides what agents are told, not what they can reach (§11).
+
+With `write`, the skill also asks agents to tidy memory when the user asks or when it is due: run `lx memory lint`, merge duplicate pages, fix broken links, shorten what is long, and correct facts that newer ones contradict, using `lx memory log` and `lx memory history` as the record of what changed. Memory consolidation is done by an agent, with the user's model, rather than by the launcher, which takes no side on models.
+
+### 12.7 CLI
+
+`lx memory` (with no action, `ls`) works whether or not the launcher runs: without it, `lx` reads and writes the files itself, under the same lock.
+
+| Command | Does |
+|---|---|
+| `lx memory ls` | Pages, and the well-known pages not yet written. |
+| `lx memory show <page> [--rev R] [--json]` | Print a page; `--json` gives its `rev`. |
+| `lx memory write <page> [--base REV] [--file F] [--title T] [--summary S] [--note N] [--by B]` | Write a page from stdin or a file. A page that exists needs `--base`. |
+| `lx memory append <page> [text] [--title T] [--note N] [--by B]` | Add to the end of a page. |
+| `lx memory rm <page> [--base REV]` | Delete a page; without `--base`, whatever it holds now. |
+| `lx memory history <page>` | Earlier versions. |
+| `lx memory log [-n N] [--page P]` | Recent writes. |
+| `lx memory search <words…>` / `lx memory lint` / `lx memory index` | As in §12.4. |
+| `lx memory access` / `lx memory access <id\|agents> <none\|read\|write>` | Who may use memory, or set it. |
+| `lx memory open` | Open the Memory view of the launcher's page, signed in. |
+
+Commands that read take `--json`.
+
+## 13. Not in 0.1
 
 - **Action catalogue.** A machine-readable list of each service's actions, so one generic client (or one MCP server in the launcher) can drive every service. The likely next addition.
 - **Remote and phone access.** Exposing the gateway on a LAN or Tailscale with pairing, so every service gets it at once.
 - **Install and update.** `lx install <repo>`. For now, installing is the job of the service's own installer.
 - **Jobs.** One-shot or scheduled commands, as opposed to long-running services.
 - **Adopting standalone instances.** A service started by hand is not taken over by the launcher.
+- **Memory by page.** Access is per service, for all of memory. A switch per page or per group of pages (so a service could read `schedule` but not `resume`) is the likely next step.
+- **Memory events for services.** Services poll `GET /api/memory` and compare its `rev`; a change stream they can subscribe to is not there yet.
 - **Version constraints, sandboxing, multiple users, Windows.**
 
 ## Appendix A. Worked examples
@@ -550,4 +709,6 @@ Choices this draft makes that would be expensive to reverse. Feedback welcome.
 2. **Standalone instances are not adopted.** Convenience commands hand over to the launcher instead (§8.4). A copy started by hand before the launcher is running stays outside it.
 3. **Events are recommended, not required, at level 2.** Polling with an `ETag` is accepted.
 4. **Agents are told nothing until the user says so.** Discovery is off for every service by default (§10.7), and a service's manifest cannot turn it on. Publishing into agents' skill folders by link, rather than by asking each agent to read `lx agents`, is what makes the skills show up in an agent's skill list.
-5. **Smaller choices.** `~/.launchx` as the home directory instead of XDG or `~/Library`; port 7600 for the gateway; several services per manifest file.
+5. **Memory belongs to the launcher, not to a service.** It is one store with one access switch per service, rather than a memory service that others `require`. The cost is a bigger launcher; the gain is that the person sets access where they already set everything else, and no service has to be running for another to read memory.
+6. **Memory is Markdown files and optimistic revisions, not a database.** The person can read and edit it with any tool, and agents read it as text. Two writers to the same page are serialised by `base` revisions rather than merged; the second gets the page back and merges itself.
+7. **Smaller choices.** `~/.launchx` as the home directory instead of XDG or `~/Library`; port 7600 for the gateway; several services per manifest file.

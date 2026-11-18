@@ -52,7 +52,7 @@ Eight ideas shape the contract. Each is a claim about how software should be bui
 
 **8. No side taken on models or harnesses.** The contract asks nothing of an agent except that it can run a command and read JSON, so whichever model and harness you use next year will work. It asks little of software too: an app that has never heard of LaunchX joins with a manifest and no code changes.
 
-The two pictures show where this is heading. Draft 0.1 of the contract already requires ideas 1, 2, 4 and 6, and is built around 7 and 8. For idea 3 it has one switch per app, and that switch decides what agents are told, not what they can reach; a switch for each part of an app is not there yet. Idea 5 is up to each app today: buttons, switches and drags work, and the pen and the shortcut keys are still plans.
+The two pictures show where this is heading. Draft 0.1 of the contract already requires ideas 1, 2, 4 and 6, and is built around 7 and 8. For idea 3 it has two switches per app: whether agents are told about it, which decides what they are told rather than what they can reach, and what it may do with your [shared memory](#shared-memory), which LaunchX enforces on every request. A switch for each part of an app is not there yet. Idea 5 is up to each app today: buttons, switches and drags work, and the pen and the shortcut keys are still plans.
 
 ## What the contract asks
 
@@ -105,6 +105,8 @@ LaunchX is the only app: services stay in the browser, where they get tabs, book
 | `lx state` | The launcher's full state document as JSON. |
 | `lx up` / `lx down` | Register or remove the launcher as a login service, and start or stop it. |
 | `lx agents` / `lx agents on <id>` / `lx agents off <id>` | What your AI agents can discover, and the switch for each service (see below). |
+| `lx memory` | Your shared memory: `ls`, `show`, `write`, `append`, `rm`, `history`, `log`, `search`, `lint`, `index`, `open` (see below). |
+| `lx memory access` / `lx memory access <id\|agents> none\|read\|write` | Which apps, and whether your agents, may read or write your memory. |
 
 Every page of the launcher is also an API: `GET /api/state`, `GET /api/events` (server-sent events), `POST /api/services/<id>/start`. Programs reach it at `http://127.0.0.1:7600` with the token in `~/.launchx/run/launchx.json`.
 
@@ -118,6 +120,29 @@ Each service has a **Discoverable by agents** switch: on its card, in the menu b
 
 Switching a service off removes what LaunchX put there; LaunchX never touches skills it did not create. The switch controls what agents are told, not what they can reach: an agent runs as you, so it could still find a hidden service if it went looking.
 
+## Shared memory
+
+Every app you run should not have to ask who you are. LaunchX keeps one memory for you, a small wiki of Markdown pages (your profile, preferences, schedule, resume, projects, the people you work with) that your apps and agents read and write together. You decide, per app, whether it may read it, read and write it, or neither: on the app's card, in the page's **Memory** view, or with `lx memory access <id> read`. Every app starts with no access.
+
+```sh
+lx memory write profile --summary "PhD student in computer science, Pacific time" < profile.md
+lx memory access rmd write          # Schedule Everything keeps the schedule page
+lx memory access papers read        # the paper reader picks papers from your profile
+lx memory access agents write       # publish the launchx-memory skill to your agents
+lx memory log                       # who changed what, and why
+lx memory open                      # browse, edit, see history and restore in the browser
+```
+
+It is built from the components of agent memory: a **log** of every write (the transcript), **pages** linked with `[[page]]` (the representation), and a short **index** of one line per page that an app or agent loads at the start of a session (the injected context). What keeps it trustworthy when many writers share it:
+
+- **Nobody overwrites anyone by accident.** An update names the revision it read; if the page changed since, it is refused with the current page, and the writer merges. The page does the same for you while you edit.
+- **Each app writes as itself.** An app gets its own memory token (`LAUNCHX_MEMORY_TOKEN`), which opens memory and nothing else, and its writes are logged under its id.
+- **Nothing is lost.** The version a write replaces is kept; `lx memory history <page>` and the page's History button show and restore the last 20.
+- **It stays small.** Pages hold up to 64 KB, the index up to 200 lines, and `lx memory lint` points out broken links, missing summaries, and duplicate, large or stale pages. Tidying is an agent's job, with your model: an agent with write access is told how in its skill.
+- **It is yours.** The pages are plain files in `~/.launchx/memory`, editable with anything, and `lx memory` works when LaunchX is not running.
+
+An app reaches memory through `LAUNCHX_MEMORY_URL` with its token (`GET /api/memory/index`, `GET /api/memory/pages/profile`, `PUT` with `base`, `POST /api/memory/append/<page>`), and can ask for access in its manifest with `[service.<id>.memory] wants = "read"` and a `reason` you see on its card. [SPEC.md §12](SPEC.md#12-shared-memory) has the details.
+
 ## Files
 
 `~/.launchx` (or `$LAUNCHX_HOME`), mode 0700:
@@ -128,7 +153,8 @@ services/          links to registered manifests
 run/<id>.json      URL, token and pid of each running service (mode 0600)
 logs/<id>.log      captured output, rotated at 5 MB
 agents/skills/     skills published to your agents, linked from their skill folders
-state.json         assigned ports and tokens, the session secret, and the agents switches (mode 0600)
+memory/            your shared memory: pages/, history/ and log.jsonl
+state.json         assigned ports and tokens, the session secret, and the agents and memory switches (mode 0600)
 ```
 
 ## Development
@@ -137,7 +163,7 @@ state.json         assigned ports and tokens, the session secret, and the agents
 cargo test          # unit tests and an end-to-end run against fixture services
 ```
 
-The end-to-end test starts a real daemon on a spare port with fixture services and covers dependency order, sign-in, the token swap, the Origin check, streaming and Upgrade through the gateway, restart back-off, `lx check`, the agents switch, and shutdown.
+The end-to-end test starts a real daemon on a spare port with fixture services and covers dependency order, sign-in, the token swap, the Origin check, streaming and Upgrade through the gateway, restart back-off, `lx check`, the agents switch, shared memory (an app reading and writing with its own token under each access level, refused stale writes, the memory skill, `lx memory` without a launcher), and shutdown.
 
 ## License
 
