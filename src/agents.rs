@@ -17,6 +17,8 @@ use crate::manifest::Service;
 
 /// The skill LaunchX writes itself. No service skill may use the name.
 pub const OWN_SKILL: &str = "launchx";
+/// The skill about the shared memory (contract §12.6), also LaunchX's own.
+pub const MEMORY_SKILL: &str = "launchx-memory";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Skill {
@@ -81,8 +83,8 @@ fn read_skill(dir: &Path) -> Result<Skill, String> {
     if !valid_skill_name(&name) {
         return Err(format!("{}: skill name {name:?} must be lowercase letters, digits and '-'", file.display()));
     }
-    if name == OWN_SKILL {
-        return Err(format!("{}: the skill name '{OWN_SKILL}' is reserved", file.display()));
+    if name == OWN_SKILL || name == MEMORY_SKILL {
+        return Err(format!("{}: the skill name '{name}' is reserved", file.display()));
     }
     let description = fields.get("description").cloned().unwrap_or_default();
     if description.is_empty() {
@@ -280,7 +282,8 @@ pub struct Published {
 /// before and is no longer wanted. Every published skill is a link through
 /// `$LAUNCHX_HOME/agents/skills`, and only links into that folder are ever
 /// removed from an agent's folder. Anything else there is left alone.
-pub fn publish(home: &Home, config: &Config, services: &[Service], discoverable: &BTreeSet<String>) -> Published {
+/// `memory` is the text of the memory skill while agents may use memory.
+pub fn publish(home: &Home, config: &Config, services: &[Service], discoverable: &BTreeSet<String>, memory: Option<&str>) -> Published {
     let mut published = Published::default();
     let mut apps: Vec<(&Service, Offer)> = Vec::new();
     for service in services {
@@ -314,18 +317,24 @@ pub fn publish(home: &Home, config: &Config, services: &[Service], discoverable:
         return published;
     }
 
-    // LaunchX's own skill: present while at least one app is discoverable.
-    let own = staging.join(OWN_SKILL);
-    if apps.is_empty() {
-        if own.symlink_metadata().is_ok_and(|m| m.is_dir()) {
-            let _ = fs::remove_dir_all(&own);
-        }
-    } else {
-        let text = own_skill(&apps, home, config);
-        let file = own.join("SKILL.md");
-        if fs::read_to_string(&file).ok().as_deref() != Some(text.as_str()) {
-            if let Err(error) = fs::create_dir_all(&own).and_then(|_| fs::write(&file, &text)) {
-                published.problems.push(format!("cannot write {}: {error}", file.display()));
+    // LaunchX's own skills: `launchx` while at least one app is discoverable,
+    // `launchx-memory` while agents may use memory.
+    let own_text = (!apps.is_empty()).then(|| own_skill(&apps, home, config));
+    for (name, text) in [(OWN_SKILL, own_text.as_deref()), (MEMORY_SKILL, memory)] {
+        let own = staging.join(name);
+        match text {
+            None => {
+                if own.symlink_metadata().is_ok_and(|m| m.is_dir()) {
+                    let _ = fs::remove_dir_all(&own);
+                }
+            }
+            Some(text) => {
+                let file = own.join("SKILL.md");
+                if fs::read_to_string(&file).ok().as_deref() != Some(text) {
+                    if let Err(error) = fs::create_dir_all(&own).and_then(|_| fs::write(&file, text)) {
+                        published.problems.push(format!("cannot write {}: {error}", file.display()));
+                    }
+                }
             }
         }
     }
@@ -352,6 +361,9 @@ pub fn publish(home: &Home, config: &Config, services: &[Service], discoverable:
     let mut visible: BTreeSet<String> = wanted.keys().cloned().collect();
     if !apps.is_empty() {
         visible.insert(OWN_SKILL.to_string());
+    }
+    if memory.is_some() {
+        visible.insert(MEMORY_SKILL.to_string());
     }
     for dir in config.agent_skill_dirs() {
         if !dir.is_dir() || fs::canonicalize(&dir).ok() == fs::canonicalize(&staging).ok() {
@@ -438,14 +450,14 @@ mod tests {
         let config = Config { agent_skill_dirs: vec![agent.display().to_string(), root.join("missing").display().to_string()], ..Config::default() };
 
         // Off: nothing published, but the UI still learns the skill names.
-        let off = publish(&home, &config, &services, &BTreeSet::new());
+        let off = publish(&home, &config, &services, &BTreeSet::new(), None);
         assert_eq!(off.skills["app"], ["plan-day", "taken"]);
         assert!(off.problems.is_empty(), "{:?}", off.problems);
         assert!(!agent.join(OWN_SKILL).exists() && !agent.join("plan-day").exists());
 
         // On: the app's skills and LaunchX's own skill appear; the user's are untouched.
         let on: BTreeSet<String> = ["app".to_string()].into();
-        let published = publish(&home, &config, &services, &on);
+        let published = publish(&home, &config, &services, &on, None);
         assert!(agent.join("plan-day/SKILL.md").is_file());
         let own = fs::read_to_string(agent.join(OWN_SKILL).join("SKILL.md")).unwrap();
         assert!(own.contains("App (app): Does things") && own.contains("`app state`") && !own.contains("Other"), "{own}");
@@ -461,8 +473,13 @@ mod tests {
         assert_eq!(apps.len(), 1);
         assert_eq!(apps[0]["skills"][0]["name"], "plan-day");
 
+        // The memory skill is published on its own, with no app discoverable.
+        publish(&home, &config, &services, &BTreeSet::new(), Some("---\nname: launchx-memory\ndescription: Memory.\n---\n"));
+        assert!(agent.join(MEMORY_SKILL).join("SKILL.md").is_file() && agent.join(OWN_SKILL).symlink_metadata().is_err());
+
         // Off again: LaunchX's links go, everything else stays.
-        publish(&home, &config, &services, &BTreeSet::new());
+        publish(&home, &config, &services, &BTreeSet::new(), None);
+        assert!(agent.join(MEMORY_SKILL).symlink_metadata().is_err() && !home.agent_skills_dir().join(MEMORY_SKILL).exists());
         assert!(agent.join("mine/SKILL.md").is_file() && agent.join("taken/SKILL.md").is_file());
         assert!(agent.join("plan-day").symlink_metadata().is_err() && agent.join(OWN_SKILL).symlink_metadata().is_err());
         assert!(!home.agent_skills_dir().join(OWN_SKILL).exists() && !home.agent_skills_dir().join("plan-day").exists());

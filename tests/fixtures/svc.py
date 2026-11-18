@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A level-2 test service. Behaviour is set by FIXTURE_MODE:
 
-ok       follows the contract (health, state, events, an echo Upgrade, SIGTERM)
+ok       follows the contract (health, state, events, an echo Upgrade, SIGTERM),
+         and POST /memory-call reaches the shared memory with its own memory token
 crash    exits 1 at once
 noauth   answers without checking the token
 """
@@ -16,7 +17,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 MODE = os.environ.get("FIXTURE_MODE", "ok")
 SERVICE = os.environ.get("LAUNCHX_SERVICE", "fixture")
 TOKEN = os.environ.get("LAUNCHX_TOKEN", "")
-STATE = {"service": SERVICE, "counter": 0, "dependency": os.environ.get("LAUNCHX_DEP_ALPHA_URL")}
+STATE = {"service": SERVICE, "counter": 0, "dependency": os.environ.get("LAUNCHX_DEP_ALPHA_URL"),
+         "memory": os.environ.get("LAUNCHX_MEMORY_URL")}
+MEMORY_TOKEN = os.environ.get("LAUNCHX_MEMORY_TOKEN", "")
+
+
+def memory_call(method, path, body):
+    import urllib.error
+    import urllib.request
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(STATE["memory"] + path, data=data, method=method,
+                                     headers={"Authorization": "Bearer " + MEMORY_TOKEN, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read() or b"{}")
+
 
 if len(sys.argv) > 1 and sys.argv[1] == "--version":
     print("fixture 1.2.3")
@@ -91,7 +108,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return
         length = int(self.headers.get("Content-Length") or 0)
-        self.rfile.read(length)
+        body = self.rfile.read(length)
+        if self.path == "/memory-call":
+            call = json.loads(body)
+            status, answer = memory_call(call["method"], call["path"], call.get("body"))
+            self.reply(200, json.dumps({"status": status, "body": answer}))
+            return
         STATE["counter"] += 1
         self.reply(200, json.dumps({"counter": STATE["counter"]}))
 

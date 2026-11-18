@@ -52,6 +52,12 @@ impl Daemon {
         Ok(value)
     }
 
+    /// Any method, for the memory API (§12.4).
+    pub async fn send(&self, method: &str, path: &str, body: Option<Value>) -> anyhow::Result<Value> {
+        let method = Method::from_bytes(method.as_bytes())?;
+        self.call(method, path, body, Duration::from_secs(30)).await
+    }
+
     pub async fn get(&self, path: &str) -> anyhow::Result<Value> {
         self.call(Method::GET, path, None, Duration::from_secs(10)).await
     }

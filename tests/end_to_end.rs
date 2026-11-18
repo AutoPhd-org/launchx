@@ -1,6 +1,7 @@
 //! Runs a real `lx daemon` against fixture services and checks the contract end to end:
 //! dependencies, the gateway's sign-in, header swap, Origin check, streaming,
-//! Upgrade, restart policy, `lx check`, the agents switch, and shutdown.
+//! Upgrade, restart policy, `lx check`, the agents switch, the shared memory and
+//! its access switches, and shutdown.
 
 use std::fs;
 use std::io::{Read, Write};
@@ -46,6 +47,21 @@ impl Env {
             .env("HOME", &self.root)
             .output()
             .unwrap()
+    }
+
+    fn lx_input(&self, args: &[&str], input: &str) -> Output {
+        let mut child = Command::new(LX)
+            .args(args)
+            .env("LAUNCHX_HOME", &self.home)
+            .env("LAUNCHX_INHERIT_ENV", "1")
+            .env("HOME", &self.root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        child.wait_with_output().unwrap()
     }
 
     fn lx_ok(&self, args: &[&str]) -> String {
@@ -360,6 +376,8 @@ fn launcher_end_to_end() {
     let failed: Vec<&str> = report["results"].as_array().unwrap().iter().filter(|r| r["ok"] == false).map(|r| r["check"].as_str().unwrap()).collect();
     assert_eq!(failed, ["rejects a request without the token", "rejects a wrong token"], "{report}");
 
+    let launcher_origin = format!("http://{}", env.host("launchx"));
+
     // Agents: every service starts hidden; nothing is published.
     let agent_dir = env.root.join(".claude/skills");
     let agents_json = |env: &Env| -> serde_json::Value { serde_json::from_str(&env.lx_ok(&["agents", "--json"])).unwrap() };
@@ -385,7 +403,6 @@ fn launcher_end_to_end() {
     assert!(env.lx_ok(&["ls"]).lines().any(|l| l.starts_with("alpha") && l.contains(" on ")));
 
     // The page's switch uses the same API, and needs the page's own Origin.
-    let launcher_origin = format!("http://{}", env.host("launchx"));
     let switch_beta = |headers: &[(&str, &str)]| request(gw, "POST", &env.host("launchx"), "/api/services/beta/agents", headers, r#"{"discoverable": true}"#);
     assert_eq!(switch_beta(&[("Cookie", &launcher_cookie)]).status, 403);
     let switched = switch_beta(&[("Cookie", &launcher_cookie), ("Origin", &launcher_origin), ("Content-Type", "application/json")]);
@@ -398,6 +415,87 @@ fn launcher_end_to_end() {
     assert!(agents_json(&env)["apps"].as_array().unwrap().is_empty());
     assert!(agent_dir.join("hello").symlink_metadata().is_err() && agent_dir.join("launchx").symlink_metadata().is_err());
     assert!(agent_dir.join("mine/SKILL.md").is_file());
+
+    // Shared memory: every app starts with no access, and the user decides.
+    let alpha_port: u16 = alpha_run["url"].as_str().unwrap().rsplit(':').next().unwrap().parse().unwrap();
+    let alpha_bearer = format!("Bearer {}", alpha_run["token"].as_str().unwrap());
+    let memory_call = |method: &str, path: &str, body: serde_json::Value| -> (u64, serde_json::Value) {
+        let call = serde_json::json!({ "method": method, "path": path, "body": body });
+        let reply = request(alpha_port, "POST", "127.0.0.1", "/memory-call", &[("Authorization", &alpha_bearer)], &call.to_string());
+        let reply: serde_json::Value = serde_json::from_str(&reply.body).unwrap_or_else(|_| panic!("{}", reply.body));
+        (reply["status"].as_u64().unwrap(), reply["body"].clone())
+    };
+    assert_eq!(env.service("alpha")["memory"]["access"], "none");
+    let (status, me) = memory_call("GET", "/me", serde_json::Value::Null);
+    assert_eq!((status, me["id"].as_str(), me["access"].as_str()), (200, Some("alpha"), Some("none")), "{me}");
+    let (status, refused) = memory_call("GET", "", serde_json::Value::Null);
+    assert_eq!(status, 403);
+    assert!(refused["error"].as_str().unwrap().contains("lx memory access alpha read"), "{refused}");
+
+    // The user writes from the command line (the daemon is running, so through it).
+    let wrote = env.lx_input(&["memory", "write", "profile", "--summary", "Who I am", "--by", "tester"], "- PhD student\n");
+    assert!(wrote.status.success(), "{}", String::from_utf8_lossy(&wrote.stderr));
+    assert!(String::from_utf8_lossy(&wrote.stdout).starts_with("Saved profile (rev "));
+    let blind = env.lx_input(&["memory", "write", "profile"], "overwritten\n");
+    assert!(!blind.status.success() && String::from_utf8_lossy(&blind.stderr).contains("already exists"), "a write without --base never replaces a page");
+
+    // Read access lets alpha read, not write.
+    assert!(env.lx_ok(&["memory", "access", "alpha", "read"]).contains("alpha may now read your memory"));
+    let (status, profile) = memory_call("GET", "/pages/profile", serde_json::Value::Null);
+    assert_eq!(status, 200, "{profile}");
+    assert_eq!(profile["body"], "- PhD student\n");
+    assert_eq!(profile["updated_by"], "tester");
+    assert_eq!(memory_call("PUT", "/pages/profile", serde_json::json!({ "body": "x", "base": profile["rev"] })).0, 403);
+
+    // Write access: a stale write is refused with the current page; a fresh one lands, under alpha's name.
+    env.lx_ok(&["memory", "access", "alpha", "write"]);
+    let (status, conflict) = memory_call("PUT", "/pages/profile", serde_json::json!({ "body": "x", "base": "000000000000" }));
+    assert_eq!(status, 409);
+    assert_eq!(conflict["current"]["rev"], profile["rev"]);
+    let (status, updated) = memory_call("PUT", "/pages/profile", serde_json::json!({ "body": "- PhD student\n- Mornings for writing", "base": profile["rev"], "by": "someone-else", "note": "weekly review" }));
+    assert_eq!(status, 200, "{updated}");
+    assert_eq!(updated["updated_by"], "alpha");
+    let log = env.lx_ok(&["memory", "log"]);
+    assert!(log.lines().nth(1).is_some_and(|l| l.contains("alpha") && l.contains("update") && l.contains("weekly review")), "{log}");
+    assert!(env.lx_ok(&["memory", "show", "profile"]).contains("- Mornings for writing"));
+    assert!(env.lx_ok(&["memory", "history", "profile"]).contains(profile["rev"].as_str().unwrap()));
+    assert!(env.lx_ok(&["ls"]).lines().any(|l| l.starts_with("alpha") && l.contains(" write ")));
+
+    // Credentials stay in their lane: a service's HTTP token (which its dependents hold) does
+    // not open memory, and a memory token opens nothing else.
+    let direct = format!("127.0.0.1:{gw}");
+    assert_eq!(request(gw, "GET", &direct, "/api/memory/me", &[("Authorization", &alpha_bearer)], "").status, 401);
+    let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(env.home.join("state.json")).unwrap()).unwrap();
+    let alpha_memory = format!("Bearer {}", saved["services"]["alpha"]["memory_token"].as_str().unwrap());
+    assert_eq!(request(gw, "GET", &direct, "/api/state", &[("Authorization", &alpha_memory)], "").status, 403);
+    assert_eq!(request(gw, "POST", &direct, "/api/services/alpha/memory", &[("Authorization", &alpha_memory)], r#"{"access":"write"}"#).status, 403);
+    assert_eq!(request(gw, "GET", &env.host("launchx"), "/api/memory", &[("Authorization", &alpha_memory)], "").status, 401);
+    assert_eq!(request(gw, "GET", &direct, "/api/memory/me", &[("Authorization", &alpha_memory)], "").status, 200);
+
+    // The page's switch uses the same API, and needs the page's own Origin.
+    let set_beta = |headers: &[(&str, &str)]| request(gw, "POST", &env.host("launchx"), "/api/services/beta/memory", headers, r#"{"access": "read"}"#);
+    assert_eq!(set_beta(&[("Cookie", &launcher_cookie)]).status, 403);
+    assert_eq!(set_beta(&[("Cookie", &launcher_cookie), ("Origin", &launcher_origin)]).status, 200);
+    assert_eq!(env.service("beta")["memory"]["access"], "read");
+    let page = request(gw, "GET", &env.host("launchx"), "/api/memory/pages/profile", &[("Cookie", &launcher_cookie)], "");
+    assert_eq!(page.status, 200);
+
+    // Agents: told about memory only when the user says so, through the launchx-memory skill.
+    assert!(agent_dir.join("launchx-memory").symlink_metadata().is_err());
+    env.lx_ok(&["memory", "access", "agents", "read"]);
+    let skill = fs::read_to_string(agent_dir.join("launchx-memory/SKILL.md")).unwrap();
+    assert!(skill.contains("`profile` Profile: Who I am") && skill.contains("not change it"), "{skill}");
+    let appended = env.lx(&["memory", "append", "people/ann", "--title", "Ann", "- Ann is the advisor."]);
+    assert!(appended.status.success(), "a list item can be appended as an argument: {}", String::from_utf8_lossy(&appended.stderr));
+    let skill = fs::read_to_string(agent_dir.join("launchx-memory/SKILL.md")).unwrap();
+    assert!(skill.contains("`people/ann` Ann"), "the skill's index follows the pages: {skill}");
+    let access = env.lx_ok(&["memory", "access"]);
+    assert!(access.lines().any(|l| l.starts_with("agents") && l.contains("read")), "{access}");
+    env.lx_ok(&["memory", "access", "agents", "none"]);
+    assert!(agent_dir.join("launchx-memory").symlink_metadata().is_err());
+    assert!(env.lx_ok(&["memory", "search", "advisor"]).contains("people/ann"));
+    env.lx_ok(&["memory", "rm", "people/ann"]);
+    assert!(!env.lx_ok(&["memory"]).contains("people/ann"));
 
     // Stopping alpha stops beta first; run files go away.
     let stopped = env.lx_ok(&["stop", "alpha"]);
@@ -420,6 +518,14 @@ fn launcher_end_to_end() {
     assert!(down.contains("LaunchX stopped"), "{down}");
     assert!(env.run_file("launchx").is_none());
     assert!(unsafe { libc_kill(alpha_pid, 0) } != 0, "shutdown stops services");
+
+    // Memory works without a launcher: `lx memory` reads and writes the files itself.
+    let offline = env.lx_ok(&["memory", "ls"]);
+    assert!(offline.contains("profile") && offline.contains("alpha"), "{offline}");
+    let profile_rev = serde_json::from_str::<serde_json::Value>(&env.lx_ok(&["memory", "show", "profile", "--json"])).unwrap()["rev"].as_str().unwrap().to_string();
+    let wrote = env.lx_input(&["memory", "write", "profile", "--base", &profile_rev, "--by", "tester"], "- PhD student\n- Mornings for writing\n- Offline edit\n");
+    assert!(wrote.status.success(), "{}", String::from_utf8_lossy(&wrote.stderr));
+    assert!(env.lx_ok(&["memory", "access"]).lines().any(|l| l.starts_with("alpha") && l.contains("read and write")));
     if let Some(mut old) = env.daemon.take() {
         let _ = old.wait();
     }

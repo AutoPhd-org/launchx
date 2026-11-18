@@ -60,6 +60,11 @@ impl Home {
     pub fn lock_path(&self) -> PathBuf {
         self.root.join("daemon.lock")
     }
+    /// The user's shared memory (contract §12).
+    pub fn memory_dir(&self) -> PathBuf {
+        let root = std::path::absolute(&self.root).unwrap_or_else(|_| self.root.clone());
+        root.join("memory")
+    }
     /// Where LaunchX keeps the skills it publishes to agents (contract §10.7).
     pub fn agent_skills_dir(&self) -> PathBuf {
         let root = std::path::absolute(&self.root).unwrap_or_else(|_| self.root.clone());
@@ -176,12 +181,22 @@ pub struct Persisted {
     /// Services the user made discoverable by agents (contract §10.7). Off by default.
     #[serde(default)]
     pub agents: std::collections::BTreeSet<String>,
+    /// What each service may do with the shared memory (contract §12). Absent is none.
+    #[serde(default)]
+    pub memory: BTreeMap<String, crate::memory::Access>,
+    /// What the user's agents are told they may do with the shared memory.
+    #[serde(default)]
+    pub memory_agents: crate::memory::Access,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Assigned {
     pub port: u16,
     pub token: String,
+    /// The service's own credential for the shared memory (contract §12.3). Never
+    /// handed to another service, so no service can use memory under another's name.
+    #[serde(default)]
+    pub memory_token: String,
 }
 
 /// `run/<id>.json`: how programs find a running service (contract §10.2).

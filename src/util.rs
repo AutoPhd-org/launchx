@@ -79,6 +79,16 @@ pub fn process_group(pid: u32) -> Option<u32> {
     (group > 0).then_some(group as u32)
 }
 
+/// Percent-encode a query value.
+pub fn url_encode(text: &str) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 /// Escape text for HTML.
 pub fn html(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")

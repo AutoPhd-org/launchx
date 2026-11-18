@@ -12,18 +12,34 @@
 <body>
   <header class="topbar">
     <div class="brand"><img src="/favicon.svg" alt="" width="22" height="22"><span>LaunchX</span></div>
+    <nav class="tabs" aria-label="Views">
+      <a href="#" data-tab="apps">Apps</a>
+      <a href="#memory" data-tab="memory">Memory <span class="count" id="memory-count"></span></a>
+    </nav>
     <div class="overview" id="overview">Connecting…</div>
     <div class="connection" id="connection"><span class="dot"></span><span>Connecting</span></div>
   </header>
 
   <main>
     <div class="banner" id="errors" role="alert" hidden></div>
-    <section class="grid" id="services" aria-live="polite"></section>
-    <section class="empty" id="empty" hidden>
-      <h2>No services yet</h2>
-      <p>Register a service by pointing LaunchX at its manifest:</p>
-      <pre>lx add ~/path/to/project</pre>
-      <p>A manifest is a <code>launchx.toml</code> that says how to run the service and where its health, state and page are.</p>
+    <div id="apps-view">
+      <section class="grid" id="services" aria-live="polite"></section>
+      <section class="empty" id="empty" hidden>
+        <h2>No services yet</h2>
+        <p>Register a service by pointing LaunchX at its manifest:</p>
+        <pre>lx add ~/path/to/project</pre>
+        <p>A manifest is a <code>launchx.toml</code> that says how to run the service and where its health, state and page are.</p>
+      </section>
+    </div>
+    <section class="memory" id="memory-view" hidden>
+      <aside class="memory-side">
+        <div class="memory-tools">
+          <input type="search" id="memory-q" placeholder="Search memory" aria-label="Search memory" autocomplete="off">
+          <button class="button primary" type="button" data-action="memory-new">New page</button>
+        </div>
+        <nav id="memory-pages" aria-label="Memory pages"></nav>
+      </aside>
+      <div class="memory-main" id="memory-main" aria-live="polite"></div>
     </section>
   </main>
 
