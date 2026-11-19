@@ -57,6 +57,155 @@ function asks(memory) {
   return `<p class="asks">Asks to ${what} your memory${memory.reason ? `: ${esc(memory.reason)}` : ""}</p>`;
 }
 
+// --- Installed apps (§10.8) ------------------------------------------------------
+
+const JOB_LOG = ".install";
+const VERBS = { install: "Installing", update: "Updating", uninstall: "Uninstalling" };
+let dismissedJob = null;
+let planned = null;
+
+function jobRunning() {
+  return state?.job?.status === "running";
+}
+
+function shortSource(pkg) {
+  return pkg.cloned ? pkg.source.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "") : `the folder ${pkg.dir}`;
+}
+
+function packageLine(pkg) {
+  const commit = pkg.commit ? ` · ${pkg.commit.slice(0, 7)}` : "";
+  const fresh = pkg.behind > 0 ? `<span class="new">${pkg.behind} new commit${pkg.behind === 1 ? "" : "s"}</span>` : "";
+  const off = jobRunning() ? "disabled" : "";
+  return `<div class="package">
+    <span class="from" title="Installed from ${esc(pkg.source)}">From ${esc(shortSource(pkg))}${esc(commit)}</span>${fresh}
+    <button class="button small" data-action="update" data-id="${esc(pkg.name)}" ${off}>Update</button>
+    <button class="button small danger" data-action="uninstall" data-id="${esc(pkg.name)}" ${off}>Uninstall</button>
+  </div>`;
+}
+
+function renderJob() {
+  const job = state.job;
+  const box = $("#job");
+  const running = jobRunning();
+  $("#install-open").disabled = running;
+  $("#check-updates").disabled = running;
+  $("#check-updates").hidden = !(state.packages || []).some((p) => p.cloned);
+  if (!job || dismissedJob === job.started_at) { box.hidden = true; return; }
+  const markup = running
+    ? `<span class="spinner" aria-hidden="true"></span><span class="message">${VERBS[job.action] || esc(job.action)} ${esc(job.name)}…</span><button class="link" type="button" data-job="output">Show output</button>`
+    : `<span class="dot ${job.status === "done" ? "ok" : "bad"}"></span><span class="message" title="${esc(job.message)}">${esc(job.message)}</span><button class="link" type="button" data-job="output">Output</button><button class="link" type="button" data-job="dismiss">Dismiss</button>`;
+  if (box._markup !== markup) { box.innerHTML = markup; box._markup = markup; }
+  box.className = `job ${job.status}`;
+  box.hidden = false;
+}
+
+async function startJob(url, body) {
+  try {
+    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    dismissedJob = null;
+    openLogs(JOB_LOG);
+    refresh();
+    return true;
+  } catch (error) {
+    toast(error.message);
+    return false;
+  }
+}
+
+async function packageAction(action, name) {
+  const pkg = (state.packages || []).find((p) => p.name === name);
+  if (!pkg) return;
+  if (action === "uninstall") {
+    const lines = [`Uninstall ${name}?`, "", `Stops and removes ${pkg.services.join(", ")}.`];
+    lines.push(pkg.cloned ? `Deletes the checkout ${pkg.dir}.` : `Leaves the folder ${pkg.dir} as it is.`);
+    if (pkg.data.length) lines.push(`Keeps your data in ${pkg.data.join(", ")}.`);
+    if (!confirm(lines.join("\n"))) return;
+  }
+  await startJob(`/api/packages/${encodeURIComponent(name)}/${action}`, {});
+}
+
+function resetInstall() {
+  planned = null;
+  $("#install-plan").innerHTML = "";
+  $("#install-plan").className = "plan";
+  $("#install-go").hidden = true;
+  $("#install-look").hidden = false;
+}
+
+function renderPlan(plan) {
+  const row = (label, value) => value ? `<dt>${label}</dt><dd>${value}</dd>` : "";
+  const services = plan.services.map((s) => `<code>${esc(s.id)}</code> ${esc(s.name)}`).join("<br>");
+  const installer = plan.run.length ? `<code>${esc(plan.run.join(" "))}</code>` : "None: LaunchX registers the app and runs it from the checkout";
+  $("#install-plan").innerHTML = `<dl>
+      ${row("App", esc(plan.name))}
+      ${row("From", esc(plan.source))}
+      ${plan.cloned ? row("Checkout", `<code>${esc(plan.dir)}</code>`) : ""}
+      ${row("Services", services)}
+      ${row("Installer", installer)}
+      ${row("Needs", plan.needs.map(esc).join(", "))}
+      ${row("Your data", plan.data.map((d) => `<code>${esc(d)}</code>`).join(" "))}
+    </dl>
+    ${plan.installed ? '<p class="warning">Already installed. This runs its installer again.</p>' : ""}
+    ${plan.run.length ? '<p class="warning">The installer runs as you, with access to your files. Install only from sources you trust.</p>' : ""}`;
+  $("#install-go").textContent = plan.installed ? "Reinstall" : "Install";
+}
+
+async function lookUp() {
+  const source = $("#install-source").value.trim();
+  if (!source) return;
+  if (planned && planned.source === source) { install(); return; }
+  const look = $("#install-look");
+  look.disabled = true;
+  $("#install-plan").className = "plan";
+  $("#install-plan").innerHTML = '<span class="spinner" aria-hidden="true"></span> Fetching…';
+  try {
+    const response = await fetch("/api/install/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    planned = { source, plan: result };
+    renderPlan(result);
+    look.hidden = true;
+    $("#install-go").hidden = false;
+    $("#install-go").focus();
+  } catch (error) {
+    $("#install-plan").className = "plan error";
+    $("#install-plan").textContent = error.message;
+  } finally {
+    look.disabled = false;
+  }
+}
+
+async function install() {
+  if (!planned) return;
+  const go = $("#install-go");
+  go.disabled = true;
+  const ok = await startJob("/api/install", { source: planned.source });
+  go.disabled = false;
+  if (ok) $("#install-dialog").close();
+}
+
+async function checkUpdates() {
+  const button = $("#check-updates");
+  button.disabled = true;
+  button.textContent = "Checking…";
+  try {
+    const response = await fetch("/api/packages/check", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    const fresh = result.packages.filter((p) => p.behind > 0);
+    if (result.errors?.length) toast(result.errors.join("; "));
+    else toast(fresh.length ? `Updates for ${fresh.map((p) => p.name).join(", ")}` : "Everything is up to date");
+  } catch (error) {
+    toast(`Could not check: ${error.message}`);
+  } finally {
+    button.textContent = "Check for updates";
+    button.disabled = false;
+    refresh();
+  }
+}
+
 const LABELS = { running: "Running", starting: "Starting", waiting: "Waiting", stopping: "Stopping", stopped: "Stopped", failed: "Failed" };
 
 function healthDot(service) {
@@ -79,6 +228,7 @@ function card(service) {
     : `<button class="button ${service.ui ? "" : "primary"}" data-action="start" data-id="${esc(service.id)}" ${pending || service.error && service.status !== "failed" ? "disabled" : ""}>Start</button>`;
   const restart = service.status === "running"
     ? `<button class="button" data-action="restart" data-id="${esc(service.id)}" ${pending ? "disabled" : ""}>Restart</button>` : "";
+  const pkg = service.package && (state.packages || []).find((p) => p.name === service.package);
   const agents = service.agents || { discoverable: false, skills: [] };
   const offers = [service.cli ? "CLI" : "", agents.skills.length ? `${agents.skills.length} skill${agents.skills.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   const agentsHelp = agents.discoverable
@@ -110,6 +260,7 @@ function card(service) {
       <span>Discoverable by agents</span>
       ${offers ? `<span class="offers">${esc(offers)}</span>` : ""}
     </label>
+    ${pkg ? packageLine(pkg) : ""}
     <div class="actions">${open}${toggle}${restart}<button class="button right" data-action="logs" data-id="${esc(service.id)}">Logs</button></div>
   </article>`;
 }
@@ -137,6 +288,7 @@ function render() {
   const errors = state.errors || [];
   $("#errors").hidden = errors.length === 0;
   $("#errors").innerHTML = errors.map((e) => `<p>${esc(e)}</p>`).join("");
+  renderJob();
   $("#footer").textContent = `LaunchX ${state.launcher.version} · ${state.launcher.home}`;
 }
 
@@ -166,6 +318,7 @@ function setConnection(ok) {
 
 async function act(action, id) {
   if (action === "logs") { openLogs(id); return; }
+  if (action === "update" || action === "uninstall") { packageAction(action, id); return; }
   const service = state.services.find((s) => s.id === id);
   if (action === "stop") {
     const dependents = service.required_by.filter((other) => {
@@ -652,11 +805,12 @@ function appendLog(line) {
 async function openLogs(id) {
   logsFor = id;
   const service = state.services.find((s) => s.id === id);
-  $("#logs-title").textContent = `${service?.name || id} · logs`;
+  $("#logs-title").textContent = id === JOB_LOG ? "Install output" : `${service?.name || id} · logs`;
   $("#logs-body").textContent = "";
   $("#logs").hidden = false;
   try {
-    const response = await fetch(`/api/services/${encodeURIComponent(id)}/logs?tail=400`);
+    const url = id === JOB_LOG ? "/api/install/log?tail=400" : `/api/services/${encodeURIComponent(id)}/logs?tail=400`;
+    const response = await fetch(url);
     const result = await response.json();
     if (logsFor !== id) return;
     if (!result.lines.length) $("#logs-body").textContent = "No output yet.\n";
@@ -699,6 +853,18 @@ $("#services").addEventListener("change", (event) => {
   if (box) setAgents(box.dataset.id, box.checked);
 });
 $("#logs-close").addEventListener("click", closeLogs);
+$("#job").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-job]");
+  if (!button) return;
+  if (button.dataset.job === "output") openLogs(JOB_LOG);
+  else { dismissedJob = state.job?.started_at; render(); }
+});
+$("#install-open").addEventListener("click", () => { resetInstall(); $("#install-dialog").showModal(); $("#install-source").select(); });
+$("#install-cancel").addEventListener("click", () => $("#install-dialog").close());
+$("#install-source").addEventListener("input", () => { if (planned) resetInstall(); });
+$("#install-form").addEventListener("submit", (event) => { event.preventDefault(); lookUp(); });
+$("#install-go").addEventListener("click", install);
+$("#check-updates").addEventListener("click", checkUpdates);
 $("#memory-view").addEventListener("click", memoryClick);
 $("#memory-view").addEventListener("input", memoryInput);
 $("#memory-view").addEventListener("submit", (event) => { event.preventDefault(); saveMemoryPage(); });

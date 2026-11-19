@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, watch};
 
+use crate::jobs;
 use crate::manifest;
 use crate::memory::{self, Access, Who};
 use crate::supervisor::{Event, Launcher};
@@ -303,6 +304,36 @@ impl App {
                 };
                 json_response(StatusCode::OK, json!({ "url": self.login_link(&self.launcher_host(), &landing) }))
             }
+            (&Method::GET, ["api", "install", "log"]) => {
+                let lines = query(request.uri()).get("tail").and_then(|n| n.parse().ok()).unwrap_or(200usize).min(5000);
+                json_response(StatusCode::OK, json!({ "lines": jobs::log_tail(launcher, lines) }))
+            }
+            (&Method::POST, ["api", "install", "plan"]) => {
+                let body = read_json(request).await;
+                let Some(source) = body.get("source").and_then(Value::as_str).map(str::to_string) else {
+                    return error(StatusCode::BAD_REQUEST, "Send {\"source\": \"<git URL, owner/repo or folder>\"}");
+                };
+                let name = body.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).map(str::to_string);
+                match jobs::plan(launcher, source, name).await {
+                    Ok(plan) => json_response(StatusCode::OK, plan),
+                    Err(message) => error(StatusCode::UNPROCESSABLE_ENTITY, &message),
+                }
+            }
+            (&Method::POST, ["api", "install"]) => {
+                let body = read_json(request).await;
+                let Some(source) = body.get("source").and_then(Value::as_str).map(str::to_string) else {
+                    return error(StatusCode::BAD_REQUEST, "Send {\"source\": \"<git URL, owner/repo or folder>\"}");
+                };
+                let name = body.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).map(str::to_string);
+                job_response(jobs::start_install(launcher, source, name))
+            }
+            (&Method::POST, ["api", "packages", "check"]) => json_response(StatusCode::OK, jobs::check_updates(launcher).await),
+            (&Method::POST, ["api", "packages", name, "update"]) => {
+                let name = name.to_string();
+                let force = read_json(request).await.get("force").and_then(Value::as_bool).unwrap_or(false);
+                job_response(jobs::start_update(launcher, &name, force))
+            }
+            (&Method::POST, ["api", "packages", name, "uninstall"]) => job_response(jobs::start_uninstall(launcher, name)),
             (&Method::POST, ["api", "reload"]) => json_response(StatusCode::OK, launcher.reload().await),
             (&Method::POST, ["api", "shutdown"]) if bearer => {
                 let _ = self.shutdown.send(true);
@@ -607,6 +638,13 @@ async fn read_json(request: Request) -> Value {
 async fn read_json_limit(request: Request, limit: usize) -> Value {
     let Ok(body) = http_body_util::Limited::new(request.into_body(), limit).collect().await else { return json!({}) };
     serde_json::from_slice(&body.to_bytes()).unwrap_or_else(|_| json!({}))
+}
+
+fn job_response(result: Result<jobs::Job, String>) -> Response {
+    match result {
+        Ok(job) => json_response(StatusCode::ACCEPTED, json!({ "job": job })),
+        Err(message) => error(StatusCode::CONFLICT, &message),
+    }
 }
 
 fn json_response(status: StatusCode, value: Value) -> Response {

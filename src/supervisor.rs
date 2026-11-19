@@ -122,6 +122,8 @@ pub struct Launcher {
     publishing: Mutex<()>,
     http: HttpClient,
     env: Vec<(String, String)>,
+    /// The install, update or uninstall the page started last (contract §10.8).
+    pub job: Mutex<Option<crate::jobs::Job>>,
 }
 
 /// Everything needed to spawn one service.
@@ -177,6 +179,7 @@ impl Launcher {
             publishing: Mutex::new(()),
             http: http_client(),
             env: platform::environment(),
+            job: Mutex::new(None),
         });
         launcher.publish_agents();
         Ok(launcher)
@@ -211,6 +214,11 @@ impl Launcher {
         }
         let assigned = inner.persisted.services.get(id)?;
         Some((assigned.port, assigned.token.clone()))
+    }
+
+    /// The user's login environment, as services get it.
+    pub fn env(&self) -> Vec<(String, String)> {
+        self.env.clone()
     }
 
     pub fn runtime(&self, id: &str) -> Option<Runtime> {
@@ -596,6 +604,8 @@ impl Launcher {
     }
 
     pub fn snapshot(&self) -> Value {
+        let installs = crate::install::Installs::load(&self.home);
+        let job = self.job.lock().unwrap_or_else(|p| p.into_inner()).clone();
         let inner = self.lock();
         let defs = Self::defs(&inner);
         let services: Vec<Value> = inner
@@ -630,6 +640,7 @@ impl Launcher {
                     "cli": def.cli,
                     "homepage": def.homepage,
                     "manifest": entry.service.manifest,
+                    "package": installs.owner_of(id).map(|p| p.name.clone()),
                     "agents": {
                         "discoverable": inner.persisted.agents.contains(id),
                         "skills": inner.agent_skills.get(id).cloned().unwrap_or_default(),
@@ -652,6 +663,8 @@ impl Launcher {
             },
             "errors": inner.errors.iter().chain(&inner.agent_problems).collect::<Vec<_>>(),
             "services": services,
+            "packages": installs.packages.values().map(crate::install::Package::to_json).collect::<Vec<_>>(),
+            "job": job,
             "memory": {
                 "agents": inner.persisted.memory_agents,
                 "pages": self.memory.count(),
