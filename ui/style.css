@@ -85,7 +85,7 @@ main { flex: 1; padding: 24px; max-width: 1180px; width: 100%; margin: 0 auto; }
 }
 .banner p { margin: 2px 0; }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 16px; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -95,6 +95,7 @@ main { flex: 1; padding: 24px; max-width: 1180px; width: 100%; margin: 0 auto; }
   flex-direction: column;
   gap: 12px;
   box-shadow: var(--shadow);
+  min-width: 0;
 }
 .card-head { display: flex; align-items: flex-start; gap: 12px; }
 .icon {
@@ -286,4 +287,42 @@ main { flex: 1; padding: 24px; max-width: 1180px; width: 100%; margin: 0 auto; }
   main { padding: 16px; }
   .grid { grid-template-columns: 1fr; }
   .meta { grid-template-columns: repeat(2, 1fr); }
+}
+
+.apps-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+.job { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; color: var(--muted); }
+.job .message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job.failed .message { color: var(--bad); }
+.job.done .message { color: var(--text); }
+.spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.link { font: inherit; font-size: 13px; border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; }
+.package { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; }
+.package .from { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.package .new { color: var(--accent); font-weight: 560; }
+.install-dialog {
+  border: 1px solid var(--line); border-radius: 12px; padding: 0; width: min(560px, calc(100vw - 32px));
+  background: var(--card); color: var(--text); box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+.install-dialog::backdrop { background: rgba(10, 12, 16, .45); }
+.install-dialog form { padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
+.install-dialog h2 { margin: 0 0 6px; font-size: 16px; }
+.install-dialog label { font-size: 12.5px; color: var(--muted); }
+.install-dialog input {
+  font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg); color: var(--text);
+}
+.install-dialog input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.hint { margin: 0; color: var(--muted); font-size: 12.5px; }
+.plan:empty { display: none; }
+.plan { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--bg); font-size: 13px; }
+.plan.error { border-color: var(--bad); color: var(--bad); }
+.plan dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.plan dt { color: var(--muted); }
+.plan dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.plan .warning { margin: 8px 0 0; color: var(--warn); font-size: 12.5px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+@media (max-width: 600px) {
+  .apps-bar { flex-wrap: wrap; }
+  .job { flex-basis: 100%; }
 }

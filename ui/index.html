@@ -23,12 +23,17 @@
   <main>
     <div class="banner" id="errors" role="alert" hidden></div>
     <div id="apps-view">
+      <div class="apps-bar">
+        <div class="job" id="job" role="status" aria-live="polite" hidden></div>
+        <button class="button" type="button" id="check-updates">Check for updates</button>
+        <button class="button primary" type="button" id="install-open">Install app</button>
+      </div>
       <section class="grid" id="services" aria-live="polite"></section>
       <section class="empty" id="empty" hidden>
-        <h2>No services yet</h2>
-        <p>Register a service by pointing LaunchX at its manifest:</p>
-        <pre>lx add ~/path/to/project</pre>
-        <p>A manifest is a <code>launchx.toml</code> that says how to run the service and where its health, state and page are.</p>
+        <h2>No apps yet</h2>
+        <p>Press <strong>Install app</strong> and give a repository, such as <code>AutoPhd-org/schedule-everything</code>, or install one from a terminal:</p>
+        <pre>lx install AutoPhd-org/schedule-everything</pre>
+        <p>An app that is already on this computer can be registered where it is: <code>lx add ~/path/to/project</code>. Either way, the app needs a <code>launchx.toml</code> that says how to run it.</p>
       </section>
     </div>
     <section class="memory" id="memory-view" hidden>
@@ -53,6 +58,21 @@
     </header>
     <pre id="logs-body"></pre>
   </aside>
+
+  <dialog class="install-dialog" id="install-dialog" aria-labelledby="install-title">
+    <form id="install-form" method="dialog">
+      <h2 id="install-title">Install an app</h2>
+      <label for="install-source">Repository or folder</label>
+      <input id="install-source" name="source" placeholder="AutoPhd-org/schedule-everything" autocomplete="off" spellcheck="false" required>
+      <p class="hint">A git URL, <code>owner/repo</code> on GitHub, or a folder on this computer. A repository is cloned into LaunchX's <code>sources</code> folder; a folder is installed where it is.</p>
+      <div class="plan" id="install-plan" aria-live="polite"></div>
+      <div class="dialog-actions">
+        <button class="button" type="button" id="install-cancel">Cancel</button>
+        <button class="button" type="submit" id="install-look" value="look">Look it up</button>
+        <button class="button primary" type="button" id="install-go" hidden>Install</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="toast" id="toast" role="status" hidden></div>
 </body>

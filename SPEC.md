@@ -149,6 +149,35 @@ wants  = "write"
 reason = "Keeps your schedule page current and suggests tasks that fit your profile"
 ```
 
+### 4.9 Install fields
+
+The optional top-level `[install]` table says how to build and install the project from a checkout of its repository, so that `lx install` and `lx update` can do it (§10.8). LaunchX reads it only from the `launchx.toml` at the root of a checkout; a copy of the manifest elsewhere may carry it and it is ignored there.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `run` | array of strings | none | The installer: command and arguments, run in the checkout. |
+| `uninstall` | array of strings | none | Undoes what `run` did (commands, launch agents, installed files) and keeps the user's data. |
+| `needs` | array of strings | empty | Executables that must be on `PATH` before `run`, for example `cargo`. |
+| `data` | array of strings | empty | Where the app keeps the user's data. Shown on uninstall, and what to copy when moving to another machine. LaunchX never deletes it. |
+
+```toml
+[install]
+run       = ["./install.sh", "--yes"]
+uninstall = ["./uninstall.sh"]
+needs     = ["cargo"]
+data      = ["~/.schedule_management"]
+```
+
+An installer:
+
+- MUST NOT prompt. Its standard input is closed.
+- MUST be safe to run again over an earlier install, since that is how updates run, and MUST keep the user's data.
+- MAY register a manifest of its own with `lx add`, for example one written next to the files it installed. When it has registered none of the services the checkout's manifest defines, LaunchX registers the checkout's manifest.
+
+It runs with the user's login environment, the directory of `lx` first on `PATH`, `LAUNCHX_HOME`, and `LAUNCHX_INSTALL` set to `install` or `update`.
+
+Without `run`, installing only registers the checkout's manifest. That suits a project that runs from its checkout.
+
 ## 5. Process contract (level 1)
 
 ### 5.1 Foreground
@@ -337,6 +366,8 @@ run/<id>.json        one per running service, mode 0600
 logs/<id>.log        captured output, rotated
 agents/skills/       skills published to agents (§10.7)
 memory/              the user's shared memory (§12.1)
+sources/<name>/      checkouts that lx install cloned (§10.8)
+installs.json        what was installed from where (§10.8)
 state.json           assigned ports and tokens, which services the user left running,
                      which are discoverable by agents and what each may do with
                      memory; mode 0600
@@ -417,6 +448,12 @@ POST /api/memory/agents                body {"access": "none"|"read"|"write"} (�
 *    /api/memory/…                     the shared memory (§12.4)
 GET  /api/services/{id}/logs?tail=200
 GET  /api/agents                       what agents are told (§10.7)
+POST /api/install/plan                 body {"source", "name"?}: fetch and say what installing would do (§10.8)
+POST /api/install                      body {"source", "name"?}: install, as a job
+POST /api/packages/{name}/update       body {"force"?}: update, as a job
+POST /api/packages/{name}/uninstall    remove, as a job
+POST /api/packages/check               look for updates now
+GET  /api/install/log?tail=200         output of the current or last job
 POST /api/link                         one-time sign-in link; body {"service": id?, "next": path?}
 POST /api/reload
 POST /api/shutdown                     bearer token only
@@ -462,6 +499,9 @@ Its CLI:
 | `lx open [id]` | Open the launcher, or a service's UI, in the browser with a session. |
 | `lx logs <id> [-f]` | Show or follow captured output. |
 | `lx add <path>` / `lx rm <id>` | Register or unregister a manifest. |
+| `lx install [<source>]` | Install an app from a repository or folder, or with no source, list what is installed (§10.8). |
+| `lx update [<name>…]` | Update installed apps, all of them by default; `--check` only reports. |
+| `lx uninstall <name>` | Remove an installed app, keeping its data. |
 | `lx check <id>` | Verify the service against its declared level. |
 | `lx state` | Print the launcher's state document. |
 | `lx agents` | List the services agents can discover (§10.7). |
@@ -494,6 +534,23 @@ Every published skill is a link from the agent's folder to `$LAUNCHX_HOME/agents
 
 The switch decides what agents are told, not what they can reach. An agent runs as the user, so it can still read run files and call a service it was not told about (§11).
 
+### 10.8 Installing, updating and removing apps
+
+`lx install <source>` installs an app. The source is a git URL, `owner/repo` for a GitHub repository, or a folder on this machine.
+
+- **A URL** is cloned into `$LAUNCHX_HOME/sources/<name>`, where the name is the repository's. LaunchX owns that checkout: it pulls it to update and deletes it on uninstall.
+- **A folder** is installed where it is. LaunchX never pulls, changes or deletes it. This is how to install something that is not published, or a working copy.
+
+LaunchX then reads the checkout's `launchx.toml`, shows its services, the installer command (§4.9) and where the app keeps data, and asks before going on (`--yes` skips the question). It checks `needs`, stops the app's running services, runs the installer, registers the app (§4.9), records it, and starts again what it stopped. Installing an app that is already installed updates it.
+
+`lx update [<name>…]` pulls each cloned app with `git pull --ff-only` and, when there are new commits, runs its installer again (`--force` runs it anyway). An app installed from a folder is reinstalled from the folder as it is. Running services are stopped first and started again after. `lx update --check` fetches and reports without changing anything. The launcher also checks at start and every twelve hours, without pulling, and shows the apps that have updates.
+
+`lx uninstall <name>` stops the app's services, runs its `uninstall` command, unregisters its manifests, deletes the checkout if LaunchX cloned it, and forgets it. The app's data stays, and the command says where. A service id works in place of the name.
+
+`installs.json` records each app: its source, checkout, whether LaunchX cloned it, its services, the commit installed, its `data` paths, and when it was installed and updated.
+
+The launcher's page does the same: an Install button takes a source and shows the plan before installing, and each installed app's card has Update and Uninstall. On the page each of these runs as a job whose output streams to the log panel. One install, update or uninstall runs at a time, from the page or the command line.
+
 ## 11. Security model
 
 | Threat | Handled by |
@@ -507,6 +564,7 @@ The switch decides what agents are told, not what they can reach. An agent runs 
 | One service using memory under another's name | Memory tokens are per service and never handed to dependents; writes are logged under the caller's id, whatever it claims. |
 | A lost update to a shared page | Every update names the revision it was based on; a stale one is refused (§12.5). |
 | Other devices on the network | Everything binds to loopback by default. |
+| Installing runs code from a repository | LaunchX installs only from a source the user names, shows the installer command and asks first. The page's install API needs the launcher session, like every other action. |
 
 Out of scope: a hostile process running as the same user. It can read the run files, as it can read everything else the user owns. This includes an AI agent the user runs: hiding a service from agents (§10.7) keeps it out of what they are told, and a well-behaved agent stays away, but only running the agent as another user, or in a sandbox, keeps it out. The same holds for memory: its files are the user's, so a service that reads them directly, rather than through the API, is not stopped by the switch.
 
@@ -642,7 +700,8 @@ Commands that read take `--json`.
 
 - **Action catalogue.** A machine-readable list of each service's actions, so one generic client (or one MCP server in the launcher) can drive every service. The likely next addition.
 - **Remote and phone access.** Exposing the gateway on a LAN or Tailscale with pairing, so every service gets it at once.
-- **Install and update.** `lx install <repo>`. For now, installing is the job of the service's own installer.
+- **Restoring on a new machine.** `installs.json` lists every source, so `lx install` could reinstall them all from it.
+- **Pinned versions.** `lx install` follows a repository's default branch; installing a tag or branch is not there yet.
 - **Jobs.** One-shot or scheduled commands, as opposed to long-running services.
 - **Adopting standalone instances.** A service started by hand is not taken over by the launcher.
 - **Memory by page.** Access is per service, for all of memory. A switch per page or per group of pages (so a service could read `schedule` but not `resume`) is the likely next step.

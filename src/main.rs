@@ -5,6 +5,8 @@ mod check;
 mod client;
 mod gateway;
 mod home;
+mod install;
+mod jobs;
 mod manifest;
 mod memory;
 mod platform;
@@ -72,6 +74,36 @@ enum Command {
     Add { path: PathBuf },
     /// Unregister the manifest that defines a service
     Rm { id: String },
+    /// Install an app from a git URL, owner/repo on GitHub, or a folder; with no source, list installed apps
+    Install {
+        source: Option<String>,
+        /// The name to install it under (default: the repository's)
+        #[arg(long)]
+        name: Option<String>,
+        /// Do not ask before running the app's installer
+        #[arg(short, long)]
+        yes: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update installed apps: pull, run the installer again, restart what was running
+    Update {
+        /// Apps (or service ids) to update; all of them when left out
+        names: Vec<String>,
+        /// Only fetch and report what has updates
+        #[arg(long)]
+        check: bool,
+        /// Run the installer even when there is nothing new
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove an installed app: run its uninstaller, unregister it, delete the checkout LaunchX cloned. Its data stays
+    Uninstall {
+        /// The app's name, or one of its service ids
+        name: String,
+        #[arg(short, long)]
+        yes: bool,
+    },
     /// Start a service on a spare port and test it against its declared level
     Check {
         id: String,
@@ -247,6 +279,10 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
         Command::Logs { id, follow, lines } => logs(home, &id, follow, lines).await,
         Command::Add { path } => add(home, &path).await,
         Command::Rm { id } => rm(home, &id).await,
+        Command::Install { source: None, json, .. } => list_installs(home, json),
+        Command::Install { source: Some(source), name, yes, .. } => install_app(home, &source, name.as_deref(), yes).await,
+        Command::Update { names, check, force } => update_apps(home, names, check, force).await,
+        Command::Uninstall { name, yes } => uninstall_app(home, &name, yes).await,
         Command::Check { id, json } => {
             let config = home.config()?;
             let ok = check::check(&home, &config, &id, json).await?;
@@ -294,6 +330,7 @@ async fn daemon(home: Home) -> anyhow::Result<ExitCode> {
     let app = gateway::App::new(launcher.clone(), shutdown_tx.clone());
     let server = tokio::spawn(gateway::serve(app, listener));
     launcher.autostart();
+    jobs::watch_updates(&launcher);
     println!("LaunchX {} listening at {}", supervisor::VERSION, config.launcher_url());
 
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -1020,31 +1057,11 @@ async fn logs(home: Home, id: &str, follow: bool, lines: usize) -> anyhow::Resul
 }
 
 async fn add(home: Home, path: &std::path::Path) -> anyhow::Result<ExitCode> {
-    home.ensure()?;
     let file = manifest::locate(path)?;
-    let services = manifest::parse(&file, &file)?;
-    let (existing, _) = manifest::load_registry(&home);
-    if let Some(same) = existing.iter().find(|s| s.manifest == file) {
-        println!("Already registered: {} ({})", same.entry.display(), file.display());
+    let Some(services) = manifest::register(&home, &file)? else {
+        println!("Already registered: {}", file.display());
         return Ok(ExitCode::SUCCESS);
-    }
-    for service in &services {
-        if let Some(other) = existing.iter().find(|s| s.id == service.id) {
-            bail!("A service named '{}' is already registered from {}. Remove it first: lx rm {}", service.id, other.manifest.display(), service.id);
-        }
-    }
-    let stem: String = file
-        .parent()
-        .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect())
-        .unwrap_or_else(|| services[0].id.clone());
-    let mut link = home.services_dir().join(format!("{stem}.toml"));
-    let mut n = 2;
-    while link.symlink_metadata().is_ok() {
-        link = home.services_dir().join(format!("{stem}-{n}.toml"));
-        n += 1;
-    }
-    std::os::unix::fs::symlink(&file, &link).with_context(|| format!("linking {}", link.display()))?;
+    };
     for service in &services {
         println!("Registered {} ({}), level {}, from {}", service.id, service.def.name, service.def.level, file.display());
     }
@@ -1063,8 +1080,7 @@ async fn add(home: Home, path: &std::path::Path) -> anyhow::Result<ExitCode> {
 async fn rm(home: Home, id: &str) -> anyhow::Result<ExitCode> {
     let (services, _) = manifest::load_registry(&home);
     let Some(service) = services.iter().find(|s| s.id == id) else { bail!("Unknown service '{id}'") };
-    let entry = service.entry.clone();
-    let siblings: Vec<&str> = services.iter().filter(|s| s.entry == entry).map(|s| s.id.as_str()).collect();
+    let siblings: Vec<String> = services.iter().filter(|s| s.entry == service.entry).map(|s| s.id.clone()).collect();
     if siblings.len() > 1 {
         println!("{} also defines {}; unregistering all of them.", service.manifest.display(), siblings.join(", "));
     }
@@ -1074,13 +1090,218 @@ async fn rm(home: Home, id: &str) -> anyhow::Result<ExitCode> {
             daemon.post(&format!("/api/services/{sibling}/stop"), json!({})).await?;
         }
     }
-    if !entry.starts_with(home.services_dir()) {
-        bail!("refusing to remove {}, which is outside {}", entry.display(), home.services_dir().display());
-    }
-    fs::remove_file(&entry).with_context(|| format!("removing {}", entry.display()))?;
+    let removed = manifest::unregister(&home, id)?;
     if let Some(daemon) = &daemon {
         daemon.post("/api/reload", json!({})).await?;
     }
-    println!("Unregistered {} (the manifest itself is untouched).", siblings.join(", "));
+    println!("Unregistered {} (the manifest itself is untouched).", removed.join(", "));
+    if let Some(package) = install::Installs::load(&home).owner_of(id) {
+        println!("It was installed with lx install; to remove the app itself: lx uninstall {}", package.name);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+// --- Installing apps (§10.8) ----------------------------------------------------
+
+/// Stopping and starting services through a running launcher, if there is one.
+struct ViaDaemon(Option<Daemon>);
+
+impl install::Services for ViaDaemon {
+    async fn stop(&self, ids: &[String]) -> Vec<String> {
+        let Some(daemon) = &self.0 else { return Vec::new() };
+        let Ok(state) = daemon.get("/api/state").await else { return Vec::new() };
+        let mut stopped = Vec::new();
+        for id in ids {
+            let running = state["services"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|s| s["id"] == id.as_str() && !matches!(s["status"].as_str(), Some("stopped" | "failed")));
+            if !running {
+                continue;
+            }
+            if let Ok(reply) = daemon.post(&format!("/api/services/{id}/stop"), json!({})).await {
+                for other in reply["stopped"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                    if !stopped.iter().any(|s| s == other) {
+                        stopped.push(other.to_string());
+                    }
+                }
+            }
+        }
+        stopped
+    }
+
+    async fn reload_and_start(&self, ids: &[String]) {
+        let Some(daemon) = &self.0 else { return };
+        let _ = daemon.post("/api/reload", json!({})).await;
+        for id in ids {
+            if let Err(error) = daemon.post(&format!("/api/services/{id}/start"), json!({})).await {
+                eprintln!("! could not start {id} again: {error:#}");
+            }
+        }
+    }
+}
+
+fn terminal_out() -> install::Out {
+    std::sync::Arc::new(|line: &str| println!("  {line}"))
+}
+
+fn install_env(home: &Home, action: &str) -> Vec<(String, String)> {
+    install::environment(home, std::env::vars().collect(), action)
+}
+
+/// Ask a yes/no question on the terminal; without one, refuse unless --yes.
+fn confirm(question: &str, yes: bool) -> anyhow::Result<bool> {
+    use std::io::{IsTerminal, Write};
+    if yes {
+        return Ok(true);
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!("Not asking without a terminal; pass --yes to go ahead");
+    }
+    print!("{question} [y/N] ");
+    std::io::stdout().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+}
+
+fn short(commit: &Option<String>) -> String {
+    commit.as_deref().map(|c| c.chars().take(7).collect()).unwrap_or_else(|| "—".into())
+}
+
+fn list_installs(home: Home, as_json: bool) -> anyhow::Result<ExitCode> {
+    let installs = install::Installs::load(&home);
+    if as_json {
+        return print_json(&json!({ "packages": installs.packages.values().map(install::Package::to_json).collect::<Vec<_>>() }));
+    }
+    if installs.packages.is_empty() {
+        println!("Nothing is installed with lx install yet. Install an app with: lx install <git-url | owner/repo | folder>");
+        return Ok(ExitCode::SUCCESS);
+    }
+    let mut rows = vec![vec!["NAME".into(), "SERVICES".into(), "COMMIT".into(), "UPDATED".into(), "SOURCE".into()]];
+    for package in installs.packages.values() {
+        let mut commit = short(&package.commit);
+        if let Some(behind) = package.behind.filter(|n| *n > 0) {
+            commit.push_str(&format!(" ({behind} new)"));
+        }
+        let when = package.updated_at.as_deref().unwrap_or(&package.installed_at);
+        let source = if package.cloned { package.source.clone() } else { format!("{} (folder)", tilde(&package.dir)) };
+        rows.push(vec![package.name.clone(), package.services.join(", "), commit, local(&json!(when), "%Y-%m-%d"), source]);
+    }
+    table(rows);
+    Ok(ExitCode::SUCCESS)
+}
+
+async fn install_app(home: Home, source: &str, name: Option<&str>, yes: bool) -> anyhow::Result<ExitCode> {
+    let _lock = install::lock(&home)?;
+    let out = terminal_out();
+    let env = install_env(&home, "install");
+    let plan = {
+        let (home, env, out, source, name) = (home.clone(), env.clone(), out.clone(), source.to_string(), name.map(str::to_string));
+        tokio::task::spawn_blocking(move || install::prepare(&home, &env, &source, name.as_deref(), &out)).await??
+    };
+    for line in plan.describe() {
+        println!("{line}");
+    }
+    if !plan.install.run.is_empty() && !confirm("Run the installer?", yes)? {
+        println!("Nothing installed.");
+        return Ok(ExitCode::SUCCESS);
+    }
+    let env = if plan.existing.is_some() { install_env(&home, "update") } else { env };
+    let name = plan.name.clone();
+    let ids = plan.ids();
+    let package = install::install(&home, &env, plan, &ViaDaemon(Daemon::find(&home)), &out).await?;
+    println!("✓ Installed {name} ({})", short(&package.commit));
+    if let Some(first) = ids.first() {
+        if Daemon::find(&home).is_some() {
+            println!("Start it with: lx start {first}");
+        } else {
+            println!("Start LaunchX with `lx up`, then: lx start {first}");
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The installed apps these names or service ids mean; all of them for none.
+fn chosen(installs: &install::Installs, names: &[String]) -> anyhow::Result<Vec<install::Package>> {
+    if names.is_empty() {
+        return Ok(installs.packages.values().cloned().collect());
+    }
+    names
+        .iter()
+        .map(|name| installs.find(name).cloned().ok_or_else(|| anyhow!("Nothing named '{name}' is installed (see lx install)")))
+        .collect()
+}
+
+async fn update_apps(home: Home, names: Vec<String>, check: bool, force: bool) -> anyhow::Result<ExitCode> {
+    let _lock = install::lock(&home)?;
+    let packages = chosen(&install::Installs::load(&home), &names)?;
+    if packages.is_empty() {
+        println!("Nothing is installed with lx install yet.");
+        return Ok(ExitCode::SUCCESS);
+    }
+    let env = install_env(&home, "update");
+    let mut failed = false;
+    if check {
+        for package in packages {
+            let (h, e, n) = (home.clone(), env.clone(), package.name.clone());
+            match tokio::task::spawn_blocking(move || install::check(&h, &e, &n)).await? {
+                Ok(Some(0)) => println!("{}: up to date", package.name),
+                Ok(Some(behind)) => println!("{}: {behind} new commit{} — lx update {}", package.name, if behind == 1 { "" } else { "s" }, package.name),
+                Ok(None) => println!("{}: installed from the folder {}; it updates when you change it", package.name, tilde(&package.dir)),
+                Err(error) => {
+                    failed = true;
+                    println!("{}: could not check: {error:#}", package.name);
+                }
+            }
+        }
+        return Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS });
+    }
+    let services = ViaDaemon(Daemon::find(&home));
+    let out = terminal_out();
+    for package in packages {
+        println!("Updating {}…", package.name);
+        match install::update(&home, &env, &package, force, &services, &out).await {
+            Ok(install::Updated::UpToDate) => println!("✓ {} is up to date ({})", package.name, short(&package.commit)),
+            Ok(install::Updated::Installed(new)) => println!("✓ Updated {} {} → {}", package.name, short(&package.commit), short(&new.commit)),
+            Err(error) => {
+                failed = true;
+                println!("✗ {}: {error:#}", package.name);
+            }
+        }
+    }
+    Ok(if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS })
+}
+
+async fn uninstall_app(home: Home, name: &str, yes: bool) -> anyhow::Result<ExitCode> {
+    let _lock = install::lock(&home)?;
+    let Some(package) = install::Installs::load(&home).find(name).cloned() else {
+        let (registered, _) = manifest::load_registry(&home);
+        if registered.iter().any(|s| s.id == name) {
+            bail!("{name} was not installed with lx install. To stop LaunchX running it: lx rm {name}");
+        }
+        bail!("Nothing named '{name}' is installed (see lx install)");
+    };
+    println!("Uninstall {}", package.name);
+    println!("  services  {}", package.services.join(", "));
+    if package.cloned {
+        println!("  deletes   {}", tilde(&package.dir));
+    } else {
+        println!("  keeps     {} (LaunchX did not clone it)", tilde(&package.dir));
+    }
+    for data in &package.data {
+        println!("  keeps     {data} (your data)");
+    }
+    if !confirm("Uninstall?", yes)? {
+        println!("Nothing removed.");
+        return Ok(ExitCode::SUCCESS);
+    }
+    let env = install_env(&home, "uninstall");
+    install::uninstall(&home, &env, &package, &ViaDaemon(Daemon::find(&home)), &terminal_out()).await?;
+    println!("✓ Uninstalled {}", package.name);
+    if !package.data.is_empty() {
+        println!("Your data is still in {}. Delete it yourself if you no longer want it.", package.data.join(", "));
+    }
     Ok(ExitCode::SUCCESS)
 }

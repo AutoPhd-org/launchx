@@ -75,7 +75,8 @@ Needs Rust (cargo) and, on macOS, the Xcode command-line tools (swiftc).
 ```sh
 ./install.sh            # macOS: LaunchX.app into ~/Applications, lx linked into ~/.local/bin
 lx up                   # start the launcher now and at every login
-lx add ~/code/my-app    # register a service by its directory
+lx install AutoPhd-org/schedule-everything   # install an app from its repository
+lx add ~/code/my-app    # or register one that is already on this computer
 ```
 
 On Linux `install.sh` copies `lx` into `~/.local/bin`; use the browser page at `http://launchx.localhost:7600/` (`lx open`).
@@ -86,6 +87,7 @@ On Linux `install.sh` copies `lx` into `~/.local/bin`; use the browser page at `
 Open **LaunchX** from Launchpad, Spotlight or `~/Applications`.
 
 - **Main window:** every service as a card with its status, health, summary, version and port, plus Open, Start, Stop, Restart and Logs buttons. It is the launcher's web page, signed in automatically.
+- **Install app** takes a repository or folder, shows what installing it will run, and installs it. Apps installed this way get **Update** and **Uninstall** on their card, and a note when their repository has new commits.
 - **Open** sends a service's page to your default browser, already signed in (starting the service first if needed). After that, a bookmark such as `http://vmc.localhost:7600/` signs in on its own for 30 days.
 - **Menu bar (paper plane):** each service with a coloured dot and Open / Start / Stop / Restart, without opening the window.
 - **When the launcher is not running,** the window offers a Start button (it runs `lx up`).
@@ -100,6 +102,9 @@ LaunchX is the only app: services stay in the browser, where they get tabs, book
 | `lx start <id>` / `lx stop <id>` / `lx restart <id>` | Control a service. Start brings up what it requires; stop first stops what requires it. Services you started come back when the launcher restarts (at login, after an update) until you stop them. |
 | `lx open [id]` | Open the launcher, or a service's page, in the browser. |
 | `lx logs <id> [-f] [-n N]` | Captured output, including the launcher's own notes (`[launchx]`). |
+| `lx install <source>` | Install an app from a git URL, `owner/repo` on GitHub, or a folder: clone it (a folder stays where it is), run the installer its `launchx.toml` names, register it. Asks first; `--yes` doesn't. With no source, lists what is installed. |
+| `lx update [<name>…]` | Pull each installed app and, when there is something new, run its installer again, restarting what was running. `--check` only reports. |
+| `lx uninstall <name>` | Stop the app, run its uninstaller, unregister it and delete the checkout LaunchX cloned. Your data stays, and it says where. |
 | `lx add <path>` / `lx rm <id>` | Register or unregister a manifest. `rm` removes the link in `~/.launchx/services`, never the manifest. |
 | `lx check <id>` | Start a temporary copy on a spare port and test it against the level it claims. |
 | `lx state` | The launcher's full state document as JSON. |
@@ -154,6 +159,8 @@ run/<id>.json      URL, token and pid of each running service (mode 0600)
 logs/<id>.log      captured output, rotated at 5 MB
 agents/skills/     skills published to your agents, linked from their skill folders
 memory/            your shared memory: pages/, history/ and log.jsonl
+sources/<name>/    checkouts lx install cloned
+installs.json      what lx install installed, from where, at which commit
 state.json         assigned ports and tokens, the session secret, and the agents and memory switches (mode 0600)
 ```
 

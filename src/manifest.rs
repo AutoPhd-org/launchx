@@ -17,6 +17,23 @@ struct ManifestFile {
     launchx: String,
     #[serde(default)]
     service: BTreeMap<String, ServiceDef>,
+    #[serde(default)]
+    install: Option<InstallDef>,
+}
+
+/// `[install]`: how to build and install the project from a checkout of its
+/// repository (contract §4.9). Read only from a checkout's own manifest.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct InstallDef {
+    #[serde(default)]
+    pub run: Vec<String>,
+    #[serde(default)]
+    pub uninstall: Vec<String>,
+    #[serde(default)]
+    pub needs: Vec<String>,
+    #[serde(default)]
+    pub data: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -173,6 +190,11 @@ pub fn locate(path: &Path) -> anyhow::Result<PathBuf> {
 
 /// Parse and check one manifest file.
 pub fn parse(file: &Path, entry: &Path) -> anyhow::Result<Vec<Service>> {
+    parse_with_install(file, entry).map(|(services, _)| services)
+}
+
+/// Parse a manifest with its `[install]` table (contract §4.9).
+pub fn parse_with_install(file: &Path, entry: &Path) -> anyhow::Result<(Vec<Service>, Option<InstallDef>)> {
     let text = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
     let manifest: ManifestFile = toml::from_str(&text).map_err(|err| anyhow::anyhow!("{}: {}", file.display(), err.message()))?;
     if manifest.launchx != CONTRACT_VERSION {
@@ -180,6 +202,11 @@ pub fn parse(file: &Path, entry: &Path) -> anyhow::Result<Vec<Service>> {
     }
     if manifest.service.is_empty() {
         bail!("{}: defines no [service.<id>] table", file.display());
+    }
+    if let Some(install) = &manifest.install {
+        if [&install.run, &install.uninstall].into_iter().any(|cmd| cmd.first().is_some_and(|c| c.trim().is_empty())) {
+            bail!("{}: install commands must name a program", file.display());
+        }
     }
     let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut services = Vec::new();
@@ -220,7 +247,50 @@ pub fn parse(file: &Path, entry: &Path) -> anyhow::Result<Vec<Service>> {
         }
         services.push(Service { id, def, dir: dir.clone(), manifest: file.to_path_buf(), entry: entry.to_path_buf(), error: None });
     }
-    Ok(services)
+    Ok((services, manifest.install))
+}
+
+/// Register a manifest file by linking it into `$LAUNCHX_HOME/services`
+/// (contract §4.5). Returns its services, or None when it already is.
+pub fn register(home: &Home, file: &Path) -> anyhow::Result<Option<Vec<Service>>> {
+    home.ensure()?;
+    let services = parse(file, file)?;
+    let (existing, _) = load_registry(home);
+    if existing.iter().any(|s| s.manifest == file) {
+        return Ok(None);
+    }
+    for service in &services {
+        if let Some(other) = existing.iter().find(|s| s.id == service.id) {
+            bail!("A service named '{}' is already registered from {}. Remove it first: lx rm {}", service.id, other.manifest.display(), service.id);
+        }
+    }
+    let stem: String = file
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }).collect())
+        .unwrap_or_else(|| services[0].id.clone());
+    let mut link = home.services_dir().join(format!("{stem}.toml"));
+    let mut n = 2;
+    while link.symlink_metadata().is_ok() {
+        link = home.services_dir().join(format!("{stem}-{n}.toml"));
+        n += 1;
+    }
+    std::os::unix::fs::symlink(file, &link).with_context(|| format!("linking {}", link.display()))?;
+    Ok(Some(services))
+}
+
+/// Remove the registration entry that defines `id`. Returns every service that
+/// entry defined, since they all go with it. The manifest itself is untouched.
+pub fn unregister(home: &Home, id: &str) -> anyhow::Result<Vec<String>> {
+    let (services, _) = load_registry(home);
+    let Some(service) = services.iter().find(|s| s.id == id) else { bail!("Unknown service '{id}'") };
+    let entry = service.entry.clone();
+    if !entry.starts_with(home.services_dir()) {
+        bail!("refusing to remove {}, which is outside {}", entry.display(), home.services_dir().display());
+    }
+    let siblings: Vec<String> = services.iter().filter(|s| s.entry == entry).map(|s| s.id.clone()).collect();
+    fs::remove_file(&entry).with_context(|| format!("removing {}", entry.display()))?;
+    Ok(siblings)
 }
 
 /// Everything registered in `$LAUNCHX_HOME/services`. Manifest-level problems
