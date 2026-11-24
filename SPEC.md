@@ -538,16 +538,18 @@ The switch decides what agents are told, not what they can reach. An agent runs 
 
 `lx install <source>` installs an app. The source is a git URL, `owner/repo` for a GitHub repository, or a folder on this machine.
 
-- **A URL** is cloned into `$LAUNCHX_HOME/sources/<name>`, where the name is the repository's. LaunchX owns that checkout: it pulls it to update and deletes it on uninstall.
+- **A URL** is cloned into `$LAUNCHX_HOME/sources/<name>`, where the name is the repository's. LaunchX owns that checkout: it moves it forward to update and deletes it on uninstall.
 - **A folder** is installed where it is. LaunchX never pulls, changes or deletes it. This is how to install something that is not published, or a working copy.
 
 LaunchX then reads the checkout's `launchx.toml`, shows its services, the installer command (§4.9) and where the app keeps data, and asks before going on (`--yes` skips the question). It checks `needs`, stops the app's running services, runs the installer, registers the app (§4.9), records it, and starts again what it stopped. Installing an app that is already installed updates it.
 
-`lx update [<name>…]` pulls each cloned app with `git pull --ff-only` and, when there are new commits, runs its installer again (`--force` runs it anyway). An app installed from a folder is reinstalled from the folder as it is. Running services are stopped first and started again after. `lx update --check` fetches and reports without changing anything. The launcher also checks at start and every twelve hours, without pulling, and shows the apps that have updates.
+A cloned app follows the repository's releases. A **release** is a tag of the form `v1.2.3` or `1.2`, with two to four numbers and an optional `v`; a GitHub release creates one. Pre-releases such as `v1.3.0-rc.1` and other tags are not releases. When the repository has releases, LaunchX installs the newest one, and only a newer release is an update: commits pushed between releases are not. When it has none, LaunchX follows the default branch, and every new commit is an update, until the first release. A checkout installed ahead of the newest release (from the branch, before the repository had releases) stays where it is until a release beyond it. A release deleted from the repository stops counting at the next fetch.
+
+`lx update [<name>…]` fetches each cloned app and, when there is a newer release (or, without releases, new commits on its branch), checks it out and runs its installer again (`--force` runs it anyway). An app installed from a folder is reinstalled from the folder as it is. Running services are stopped first and started again after. `lx update --check` fetches and reports without installing anything. The launcher also checks at start and every twelve hours, without installing, and shows the apps that have updates.
 
 `lx uninstall <name>` stops the app's services, runs its `uninstall` command, unregisters its manifests, deletes the checkout if LaunchX cloned it, and forgets it. The app's data stays, and the command says where. A service id works in place of the name.
 
-`installs.json` records each app: its source, checkout, whether LaunchX cloned it, its services, the commit installed, its `data` paths, and when it was installed and updated.
+`installs.json` records each app: its source, checkout, whether LaunchX cloned it, its services, the commit installed and the release it is (`version`), its `data` paths, and when it was installed and updated. After a check it also records `behind`, the commits an update would bring, `available`, the newer release when there is one, and `checked_at`.
 
 The launcher's page does the same: an Install button takes a source and shows the plan before installing, and each installed app's card has Update and Uninstall. On the page each of these runs as a job whose output streams to the log panel. One install, update or uninstall runs at a time, from the page or the command line.
 
@@ -701,7 +703,7 @@ Commands that read take `--json`.
 - **Action catalogue.** A machine-readable list of each service's actions, so one generic client (or one MCP server in the launcher) can drive every service. The likely next addition.
 - **Remote and phone access.** Exposing the gateway on a LAN or Tailscale with pairing, so every service gets it at once.
 - **Restoring on a new machine.** `installs.json` lists every source, so `lx install` could reinstall them all from it.
-- **Pinned versions.** `lx install` follows a repository's default branch; installing a tag or branch is not there yet.
+- **Pinned versions.** `lx install` follows a repository's releases, or its default branch while it has none; holding an app at a chosen tag or following another branch is not there yet.
 - **Jobs.** One-shot or scheduled commands, as opposed to long-running services.
 - **Adopting standalone instances.** A service started by hand is not taken over by the launcher.
 - **Memory by page.** Access is per service, for all of memory. A switch per page or per group of pages (so a service could read `schedule` but not `resume`) is the likely next step.
