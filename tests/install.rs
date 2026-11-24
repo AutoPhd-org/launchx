@@ -270,3 +270,72 @@ fn install_update_uninstall() {
     assert_eq!(env.state()["job"]["status"], "done", "{}", env.state()["job"]);
     assert!(env.service("echo").is_none());
 }
+
+/// A repository with releases updates from release to release; commits between
+/// releases are not updates. One without releases follows its branch until
+/// its first release.
+#[test]
+fn releases() {
+    let env = setup();
+    let repo = env.root.join("echo-app");
+    let url = format!("file://{}", repo.display());
+    let package = || env.installs()["packages"]["echo-app"].clone();
+    let commit = |n: &str| {
+        fs::write(repo.join("version"), format!("{n}\n")).unwrap();
+        git(&repo, &["commit", "-q", "-am", n]);
+    };
+
+    // No releases yet: the branch, commit by commit.
+    env.lx_ok(&["install", &url, "--yes"]);
+    assert_eq!(package()["version"], serde_json::Value::Null);
+    commit("2");
+    assert!(env.lx_ok(&["update", "--check"]).contains("echo-app: 1 new commit"));
+
+    // The first release is an update; commits after it, pre-releases and other tags are not.
+    git(&repo, &["tag", "v1.0.0"]);
+    let text = env.lx_ok(&["update", "--check"]);
+    assert!(text.contains("echo-app: v1.0.0 available"), "{text}");
+    assert_eq!(package()["available"], "v1.0.0");
+    let text = env.lx_ok(&["update"]);
+    assert!(text.contains("installing version 2") && text.contains("→ v1.0.0"), "{text}");
+    assert_eq!(package()["version"], "v1.0.0");
+    assert_eq!(package()["available"], serde_json::Value::Null);
+    commit("3");
+    git(&repo, &["tag", "v1.1.0-rc.1"]);
+    git(&repo, &["tag", "nightly"]);
+    let text = env.lx_ok(&["update", "--check"]);
+    assert!(text.contains("echo-app: up to date (v1.0.0)"), "{text}");
+    assert!(env.lx_ok(&["update"]).contains("is up to date (v1.0.0)"));
+
+    // A newer release brings everything up to it, and shows on the list and in the state.
+    commit("4");
+    git(&repo, &["tag", "v1.1.0"]);
+    commit("5");
+    assert!(env.lx_ok(&["update", "--check"]).contains("echo-app: v1.1.0 available"));
+    assert_eq!(package()["behind"], 2);
+    let text = env.lx_ok(&["install"]);
+    assert!(text.contains("v1.0.0 (v1.1.0 available)"), "{text}");
+    assert_eq!(env.state()["packages"][0]["available"], "v1.1.0");
+    let text = env.lx_ok(&["update", "echo-app"]);
+    assert!(text.contains("installing version 4") && text.contains("✓ Updated echo-app v1.0.0 → v1.1.0"), "{text}");
+    assert_eq!(env.history(), "install 1\nupdate 2\nupdate 4\n");
+
+    // A release withdrawn upstream stops counting, for an update and for a check.
+    git(&repo, &["tag", "v1.2.0"]);
+    assert!(env.lx_ok(&["update", "--check"]).contains("echo-app: v1.2.0 available"));
+    git(&repo, &["tag", "-d", "v1.2.0"]);
+    let text = env.lx_ok(&["update"]);
+    assert!(text.contains("is up to date (v1.1.0)"), "{text}");
+    git(&repo, &["tag", "v1.2.0"]);
+    assert!(env.lx_ok(&["update", "--check"]).contains("echo-app: v1.2.0 available"));
+    git(&repo, &["tag", "-d", "v1.2.0"]);
+    let text = env.lx_ok(&["update", "--check"]);
+    assert!(text.contains("echo-app: up to date (v1.1.0)"), "{text}");
+    assert_eq!(package()["available"], serde_json::Value::Null);
+    assert_eq!(env.history(), "install 1\nupdate 2\nupdate 4\n");
+
+    // A fresh install takes the newest release, not the branch ahead of it.
+    env.lx_ok(&["uninstall", "echo-app", "--yes"]);
+    let text = env.lx_ok(&["install", &url, "--yes"]);
+    assert!(text.contains("version   v1.1.0") && text.contains("installing version 4") && text.contains("✓ Installed echo-app (v1.1.0)"), "{text}");
+}

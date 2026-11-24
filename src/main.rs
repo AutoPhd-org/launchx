@@ -1166,10 +1166,6 @@ fn confirm(question: &str, yes: bool) -> anyhow::Result<bool> {
     Ok(matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }
 
-fn short(commit: &Option<String>) -> String {
-    commit.as_deref().map(|c| c.chars().take(7).collect()).unwrap_or_else(|| "—".into())
-}
-
 fn list_installs(home: Home, as_json: bool) -> anyhow::Result<ExitCode> {
     let installs = install::Installs::load(&home);
     if as_json {
@@ -1179,15 +1175,17 @@ fn list_installs(home: Home, as_json: bool) -> anyhow::Result<ExitCode> {
         println!("Nothing is installed with lx install yet. Install an app with: lx install <git-url | owner/repo | folder>");
         return Ok(ExitCode::SUCCESS);
     }
-    let mut rows = vec![vec!["NAME".into(), "SERVICES".into(), "COMMIT".into(), "UPDATED".into(), "SOURCE".into()]];
+    let mut rows = vec![vec!["NAME".into(), "SERVICES".into(), "VERSION".into(), "UPDATED".into(), "SOURCE".into()]];
     for package in installs.packages.values() {
-        let mut commit = short(&package.commit);
-        if let Some(behind) = package.behind.filter(|n| *n > 0) {
-            commit.push_str(&format!(" ({behind} new)"));
+        let mut version = package.label();
+        if let Some(available) = &package.available {
+            version.push_str(&format!(" ({available} available)"));
+        } else if let Some(behind) = package.behind.filter(|n| *n > 0) {
+            version.push_str(&format!(" ({behind} new)"));
         }
         let when = package.updated_at.as_deref().unwrap_or(&package.installed_at);
         let source = if package.cloned { package.source.clone() } else { format!("{} (folder)", tilde(&package.dir)) };
-        rows.push(vec![package.name.clone(), package.services.join(", "), commit, local(&json!(when), "%Y-%m-%d"), source]);
+        rows.push(vec![package.name.clone(), package.services.join(", "), version, local(&json!(when), "%Y-%m-%d"), source]);
     }
     table(rows);
     Ok(ExitCode::SUCCESS)
@@ -1212,7 +1210,7 @@ async fn install_app(home: Home, source: &str, name: Option<&str>, yes: bool) ->
     let name = plan.name.clone();
     let ids = plan.ids();
     let package = install::install(&home, &env, plan, &ViaDaemon(Daemon::find(&home)), &out).await?;
-    println!("✓ Installed {name} ({})", short(&package.commit));
+    println!("✓ Installed {name} ({})", package.label());
     if let Some(first) = ids.first() {
         if Daemon::find(&home).is_some() {
             println!("Start it with: lx start {first}");
@@ -1247,8 +1245,11 @@ async fn update_apps(home: Home, names: Vec<String>, check: bool, force: bool) -
         for package in packages {
             let (h, e, n) = (home.clone(), env.clone(), package.name.clone());
             match tokio::task::spawn_blocking(move || install::check(&h, &e, &n)).await? {
-                Ok(Some(0)) => println!("{}: up to date", package.name),
-                Ok(Some(behind)) => println!("{}: {behind} new commit{} — lx update {}", package.name, if behind == 1 { "" } else { "s" }, package.name),
+                Ok(Some(standing)) => match (&standing.available, standing.behind) {
+                    (Some(release), _) => println!("{}: {release} available — lx update {}", package.name, package.name),
+                    (None, 0) => println!("{}: up to date{}", package.name, standing.version.map(|v| format!(" ({v})")).unwrap_or_default()),
+                    (None, behind) => println!("{}: {behind} new commit{} — lx update {}", package.name, if behind == 1 { "" } else { "s" }, package.name),
+                },
                 Ok(None) => println!("{}: installed from the folder {}; it updates when you change it", package.name, tilde(&package.dir)),
                 Err(error) => {
                     failed = true;
@@ -1263,8 +1264,8 @@ async fn update_apps(home: Home, names: Vec<String>, check: bool, force: bool) -
     for package in packages {
         println!("Updating {}…", package.name);
         match install::update(&home, &env, &package, force, &services, &out).await {
-            Ok(install::Updated::UpToDate) => println!("✓ {} is up to date ({})", package.name, short(&package.commit)),
-            Ok(install::Updated::Installed(new)) => println!("✓ Updated {} {} → {}", package.name, short(&package.commit), short(&new.commit)),
+            Ok(install::Updated::UpToDate) => println!("✓ {} is up to date ({})", package.name, package.label()),
+            Ok(install::Updated::Installed(new)) => println!("✓ Updated {} {} → {}", package.name, package.label(), new.label()),
             Err(error) => {
                 failed = true;
                 println!("✗ {}: {error:#}", package.name);

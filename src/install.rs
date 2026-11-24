@@ -43,6 +43,9 @@ pub struct Package {
     pub services: Vec<String>,
     #[serde(default)]
     pub commit: Option<String>,
+    /// The release tag the checkout is at, when it is at one (`v1.2.0`).
+    #[serde(default)]
+    pub version: Option<String>,
     /// Where the app keeps the user's data (`[install] data`).
     #[serde(default)]
     pub data: Vec<String>,
@@ -50,9 +53,12 @@ pub struct Package {
     pub installed_at: String,
     #[serde(default)]
     pub updated_at: Option<String>,
-    /// New commits upstream at the last check, for a cloned app.
+    /// The commits an update would bring, at the last check, for a cloned app.
     #[serde(default)]
     pub behind: Option<u32>,
+    /// The newer release found at the last check, for an app that has releases.
+    #[serde(default)]
+    pub available: Option<String>,
     #[serde(default)]
     pub checked_at: Option<String>,
 }
@@ -66,12 +72,19 @@ impl Package {
             "cloned": self.cloned,
             "services": self.services,
             "commit": self.commit,
+            "version": self.version,
             "data": self.data,
             "installed_at": self.installed_at,
             "updated_at": self.updated_at,
             "behind": self.behind,
+            "available": self.available,
             "checked_at": self.checked_at,
         })
+    }
+
+    /// What is installed, for people: the release, or else the short commit.
+    pub fn label(&self) -> String {
+        self.version.clone().unwrap_or_else(|| self.commit.as_deref().map(|c| c.chars().take(7).collect()).unwrap_or_else(|| "—".into()))
     }
 }
 
@@ -271,6 +284,108 @@ fn same_remote(a: &str, b: &str) -> bool {
     norm(a) == norm(b)
 }
 
+// --- Releases -----------------------------------------------------------------------
+//
+// A repository with release tags is updated from release to release: commits
+// pushed between releases are not updates. A repository with none follows its
+// branch, commit by commit, until its first release.
+
+/// The numbers of a release tag, `v1.2.3` or `1.2`. A pre-release
+/// (`v1.3.0-rc.1`) or any other tag is not a release.
+fn release_version(tag: &str) -> Option<[u64; 4]> {
+    let digits = tag.strip_prefix(['v', 'V']).unwrap_or(tag);
+    let parts: Vec<&str> = digits.split('.').collect();
+    if !(2..=4).contains(&parts.len()) {
+        return None;
+    }
+    let mut version = [0; 4];
+    for (slot, part) in version.iter_mut().zip(&parts) {
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        *slot = part.parse().ok()?;
+    }
+    Some(version)
+}
+
+/// The newest release among these tags.
+fn newest_release<'a>(tags: impl Iterator<Item = &'a str>) -> Option<String> {
+    tags.filter_map(|tag| release_version(tag).map(|version| (version, tag))).max().map(|(_, tag)| tag.to_string())
+}
+
+/// Fetch a checkout LaunchX owns: new commits, and its tags as they are
+/// upstream, moved tags moved and deleted ones (a withdrawn release) gone.
+const FETCH: [&str; 5] = ["fetch", "--tags", "--force", "--prune", "--prune-tags"];
+
+/// The newest release in a checkout, as of its last fetch.
+fn latest_release(dir: &Path, env: &[(String, String)]) -> Option<String> {
+    newest_release(git(dir, env, &["tag", "--list"]).ok()?.lines())
+}
+
+/// The release the checkout is at, if HEAD is one.
+fn release_at_head(dir: &Path, env: &[(String, String)]) -> Option<String> {
+    newest_release(git(dir, env, &["tag", "--points-at", "HEAD"]).ok()?.lines())
+}
+
+/// Whether the checkout already has this tag's commit.
+fn has_tag(dir: &Path, env: &[(String, String)], tag: &str) -> bool {
+    git(dir, env, &["merge-base", "--is-ancestor", &format!("refs/tags/{tag}"), "HEAD"]).is_ok()
+}
+
+/// The remote branch a checkout follows while its repository has no releases.
+fn upstream(dir: &Path, env: &[(String, String)]) -> anyhow::Result<String> {
+    git(dir, env, &["rev-parse", "--abbrev-ref", "@{upstream}"])
+        // Detached at a release whose tag is gone: the remote's default branch.
+        .or_else(|_| git(dir, env, &["rev-parse", "--abbrev-ref", "origin/HEAD"]))
+}
+
+/// What an update would bring, as of the checkout's last fetch.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Standing {
+    /// Commits an update would bring.
+    pub behind: u32,
+    /// The release it would move to, when the repository has releases.
+    pub available: Option<String>,
+    /// The release installed, if the checkout is at one.
+    pub version: Option<String>,
+}
+
+fn standing(dir: &Path, env: &[(String, String)]) -> anyhow::Result<Standing> {
+    let count = |range: String| -> anyhow::Result<u32> { Ok(git(dir, env, &["rev-list", "--count", &range])?.parse().unwrap_or(0)) };
+    let version = release_at_head(dir, env);
+    Ok(match latest_release(dir, env) {
+        Some(tag) if has_tag(dir, env, &tag) => Standing { behind: 0, available: None, version },
+        Some(tag) => Standing { behind: count(format!("HEAD..refs/tags/{tag}"))?, available: Some(tag), version },
+        None => Standing { behind: count(format!("HEAD..{}", upstream(dir, env)?))?, available: None, version },
+    })
+}
+
+/// Bring a checkout to what LaunchX installs: the newest release when the
+/// repository has releases, the head of its branch when it has none. A fresh
+/// clone goes to the newest release; a checkout already installed only moves
+/// forward, so one installed ahead of a release stays until the next.
+fn follow(dir: &Path, env: &[(String, String)], fresh: bool, out: &Out) -> anyhow::Result<()> {
+    if !fresh {
+        git_loud(dir, env, &FETCH, out)?;
+    }
+    if let Some(tag) = latest_release(dir, env) {
+        if fresh || !has_tag(dir, env, &tag) {
+            out(&format!("Newest release: {tag}"));
+            git_loud(dir, env, &["checkout", "--quiet", "--detach", &format!("refs/tags/{tag}")], out)?;
+        }
+        return Ok(());
+    }
+    if fresh {
+        return Ok(());
+    }
+    if git(dir, env, &["symbolic-ref", "--quiet", "HEAD"]).is_err() {
+        // Detached at a release whose tag is gone: back onto the branch.
+        let branch = upstream(dir, env)?;
+        git_loud(dir, env, &["checkout", "--quiet", branch.strip_prefix("origin/").unwrap_or(&branch)], out)?;
+    }
+    git_loud(dir, env, &["merge", "--ff-only", "@{upstream}"], out)
+}
+
 // --- Plans ------------------------------------------------------------------------
 
 /// What installing would do, after the source has been fetched.
@@ -282,6 +397,8 @@ pub struct Plan {
     pub manifest: PathBuf,
     pub services: Vec<Service>,
     pub install: InstallDef,
+    /// The release the checkout is at, if it is at one.
+    pub version: Option<String>,
     /// The app as installed now, when this is an update.
     pub existing: Option<Package>,
 }
@@ -297,6 +414,7 @@ impl Plan {
             "source": self.source.text(),
             "dir": self.dir,
             "cloned": matches!(self.source, Source::Git(_)),
+            "version": self.version,
             "services": self.services.iter().map(|s| json!({
                 "id": s.id, "name": s.def.name, "description": s.def.description, "level": s.def.level,
             })).collect::<Vec<_>>(),
@@ -312,6 +430,9 @@ impl Plan {
     pub fn describe(&self) -> Vec<String> {
         let mut lines = vec![format!("{} {}", if self.existing.is_some() { "Reinstall" } else { "Install" }, self.name)];
         lines.push(format!("  from      {}", self.source.text()));
+        if let Some(version) = &self.version {
+            lines.push(format!("  version   {version}"));
+        }
         if matches!(self.source, Source::Git(_)) {
             lines.push(format!("  checkout  {}", self.dir.display()));
         }
@@ -334,18 +455,20 @@ impl Plan {
 }
 
 /// Read what a checkout would install.
-fn plan_from(home: &Home, name: &str, source: Source, dir: &Path) -> anyhow::Result<Plan> {
+fn plan_from(home: &Home, env: &[(String, String)], name: &str, source: Source, dir: &Path) -> anyhow::Result<Plan> {
     let file = dir.join("launchx.toml");
     if !file.is_file() {
         bail!("{} has no launchx.toml, so it is not a LaunchX app", dir.display());
     }
     let (services, install) = manifest::parse_with_install(&file, &file)?;
     let existing = Installs::load(home).packages.get(name).cloned();
-    Ok(Plan { name: name.into(), source, dir: dir.to_path_buf(), manifest: file, services, install: install.unwrap_or_default(), existing })
+    let version = release_at_head(dir, env);
+    Ok(Plan { name: name.into(), source, dir: dir.to_path_buf(), manifest: file, services, install: install.unwrap_or_default(), version, existing })
 }
 
 /// Fetch a source and read what installing it would do. A git source is
-/// cloned into `sources/<name>`, or pulled when it already is.
+/// cloned into `sources/<name>`, or brought forward when it already is, to
+/// its newest release if it has releases.
 pub fn prepare(home: &Home, env: &[(String, String)], text: &str, name: Option<&str>, out: &Out) -> anyhow::Result<Plan> {
     let source = Source::parse(text)?;
     let installs = Installs::load(home);
@@ -373,18 +496,19 @@ pub fn prepare(home: &Home, env: &[(String, String)], text: &str, name: Option<&
                 if !same_remote(&origin, url) {
                     bail!("{} is a checkout of {origin}, not {url}. Choose another name with --name.", dir.display());
                 }
-                git_loud(&dir, env, &["pull", "--ff-only"], out)?;
+                follow(&dir, env, false, out)?;
             } else {
                 if dir.exists() {
                     bail!("{} exists and is not a git checkout; move it away first", dir.display());
                 }
                 fs::create_dir_all(sources_dir(home))?;
                 git_loud(&sources_dir(home), env, &["clone", url, &name], out)?;
+                follow(&dir, env, true, out)?;
             }
             dir
         }
     };
-    plan_from(home, &name, source, &dir)
+    plan_from(home, env, &name, source, &dir)
 }
 
 // --- Install, update, uninstall: the file work -------------------------------------
@@ -426,10 +550,12 @@ pub fn install_files(home: &Home, env: &[(String, String)], plan: &Plan, out: &O
         cloned: matches!(plan.source, Source::Git(_)),
         services: ids,
         commit: head(&plan.dir, env),
+        version: release_at_head(&plan.dir, env),
         data: plan.install.data.clone(),
         installed_at: plan.existing.as_ref().map(|p| p.installed_at.clone()).unwrap_or_else(|| now.clone()),
         updated_at: plan.existing.as_ref().map(|_| now.clone()),
         behind: plan.existing.as_ref().and(Some(0)),
+        available: None,
         checked_at: plan.existing.as_ref().and_then(|p| p.checked_at.clone()),
     };
     let mut installs = Installs::load(home);
@@ -438,7 +564,8 @@ pub fn install_files(home: &Home, env: &[(String, String)], plan: &Plan, out: &O
     Ok(package)
 }
 
-/// Pull a cloned app. Returns the plan to install from, or None when there is
+/// Bring a cloned app forward: to a newer release, or new commits while it has
+/// no releases. Returns the plan to install from, or None when there is
 /// nothing new and `force` is not set. An app from a folder always reinstalls.
 pub fn prepare_update(home: &Home, env: &[(String, String)], package: &Package, force: bool, out: &Out) -> anyhow::Result<Option<Plan>> {
     let source = if package.cloned { Source::Git(package.source.clone()) } else { Source::Local(package.dir.clone()) };
@@ -447,19 +574,20 @@ pub fn prepare_update(home: &Home, env: &[(String, String)], package: &Package, 
     }
     if package.cloned {
         let before = head(&package.dir, env);
-        git_loud(&package.dir, env, &["pull", "--ff-only"], out)?;
+        follow(&package.dir, env, false, out)?;
         let after = head(&package.dir, env);
         if before == after && package.commit == after && !force {
             let mut installs = Installs::load(home);
             if let Some(record) = installs.packages.get_mut(&package.name) {
                 record.behind = Some(0);
+                record.available = None;
                 record.checked_at = Some(crate::util::now_rfc3339());
                 installs.save(home)?;
             }
             return Ok(None);
         }
     }
-    plan_from(home, &package.name, source, &package.dir).map(Some)
+    plan_from(home, env, &package.name, source, &package.dir).map(Some)
 }
 
 /// Run the app's uninstall command, unregister it, delete the checkout if
@@ -495,21 +623,26 @@ pub fn uninstall_files(home: &Home, env: &[(String, String)], package: &Package,
     Ok(())
 }
 
-/// Fetch a cloned app and count the commits it is behind. Records the answer.
-pub fn check(home: &Home, env: &[(String, String)], name: &str) -> anyhow::Result<Option<u32>> {
+/// Fetch a cloned app and say what an update would bring: a newer release, or
+/// new commits while it has no releases. Records the answer.
+pub fn check(home: &Home, env: &[(String, String)], name: &str) -> anyhow::Result<Option<Standing>> {
     let Some(package) = Installs::load(home).packages.get(name).cloned() else { bail!("Nothing named '{name}' is installed") };
     if !package.cloned {
         return Ok(None);
     }
-    git(&package.dir, env, &["fetch", "--quiet"])?;
-    let behind: u32 = git(&package.dir, env, &["rev-list", "--count", "HEAD..@{upstream}"])?.parse().unwrap_or(0);
+    git(&package.dir, env, &[&FETCH[..], &["--quiet"]].concat())?;
+    let standing = standing(&package.dir, env)?;
     let mut installs = Installs::load(home);
     if let Some(record) = installs.packages.get_mut(name) {
-        record.behind = Some(behind);
+        record.behind = Some(standing.behind);
+        record.available = standing.available.clone();
+        if record.commit == head(&package.dir, env) {
+            record.version = standing.version.clone();
+        }
         record.checked_at = Some(crate::util::now_rfc3339());
         installs.save(home)?;
     }
-    Ok(Some(behind))
+    Ok(Some(standing))
 }
 
 // --- Around the file work: stopping and starting services ---------------------------
@@ -606,6 +739,18 @@ mod tests {
         assert!(matches!(Source::parse(&here.display().to_string()).unwrap(), Source::Local(_)));
         assert_eq!(clean_name("--Odd  Name!!"), "odd-name");
         assert!(same_remote("https://github.com/A/b.git", "https://github.com/a/b/"));
+    }
+
+    #[test]
+    fn releases_are_version_tags() {
+        assert_eq!(release_version("v1.2.3"), Some([1, 2, 3, 0]));
+        assert_eq!(release_version("0.10"), Some([0, 10, 0, 0]));
+        for not in ["v1.3.0-rc.1", "nightly", "v3", "1.2.x", "v1..2", "release-1.0"] {
+            assert_eq!(release_version(not), None, "{not}");
+        }
+        let tags = ["v1.9.0", "nightly", "v1.10.0", "1.2", "v2.0.0-rc.1", "v3"];
+        assert_eq!(newest_release(tags.into_iter()).as_deref(), Some("v1.10.0"));
+        assert_eq!(newest_release(["nightly"].into_iter()), None);
     }
 
     #[test]

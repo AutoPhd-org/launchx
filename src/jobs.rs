@@ -160,7 +160,7 @@ pub fn start_install(launcher: &Arc<Launcher>, source: String, name: Option<Stri
             job.name = app.clone();
         }
         let package = install::install(&home, &env(&launcher, action), plan, &launcher, &out).await?;
-        Ok(format!("Installed {app} ({})", short(&package.commit)))
+        Ok(format!("Installed {app} ({})", package.label()))
     })
 }
 
@@ -169,8 +169,8 @@ pub fn start_update(launcher: &Arc<Launcher>, name: &str, force: bool) -> Result
     begin(launcher, "update", &package.name.clone(), move |launcher, out| async move {
         let env = env(&launcher, "update");
         match install::update(&launcher.home, &env, &package, force, &launcher, &out).await? {
-            install::Updated::UpToDate => Ok(format!("{} is up to date ({})", package.name, short(&package.commit))),
-            install::Updated::Installed(new) => Ok(format!("Updated {} {} → {}", package.name, short(&package.commit), short(&new.commit))),
+            install::Updated::UpToDate => Ok(format!("{} is up to date ({})", package.name, package.label())),
+            install::Updated::Installed(new) => Ok(format!("Updated {} {} → {}", package.name, package.label(), new.label())),
         }
     })
 }
@@ -218,8 +218,4 @@ pub fn watch_updates(launcher: &Arc<Launcher>) {
             tokio::time::sleep(Duration::from_secs(12 * 3600)).await;
         }
     });
-}
-
-fn short(commit: &Option<String>) -> String {
-    commit.as_deref().map(|c| c.chars().take(7).collect()).unwrap_or_else(|| "—".into())
 }

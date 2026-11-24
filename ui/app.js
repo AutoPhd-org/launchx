@@ -73,8 +73,11 @@ function shortSource(pkg) {
 }
 
 function packageLine(pkg) {
-  const commit = pkg.commit ? ` · ${pkg.commit.slice(0, 7)}` : "";
-  const fresh = pkg.behind > 0 ? `<span class="new">${pkg.behind} new commit${pkg.behind === 1 ? "" : "s"}</span>` : "";
+  const at = pkg.version || (pkg.commit ? pkg.commit.slice(0, 7) : "");
+  const commit = at ? ` · ${at}` : "";
+  const fresh = pkg.available
+    ? `<span class="new">${esc(pkg.available)} available</span>`
+    : pkg.behind > 0 ? `<span class="new">${pkg.behind} new commit${pkg.behind === 1 ? "" : "s"}</span>` : "";
   const off = jobRunning() ? "disabled" : "";
   return `<div class="package">
     <span class="from" title="Installed from ${esc(pkg.source)}">From ${esc(shortSource(pkg))}${esc(commit)}</span>${fresh}
@@ -141,6 +144,7 @@ function renderPlan(plan) {
   $("#install-plan").innerHTML = `<dl>
       ${row("App", esc(plan.name))}
       ${row("From", esc(plan.source))}
+      ${row("Version", plan.version ? esc(plan.version) : "")}
       ${plan.cloned ? row("Checkout", `<code>${esc(plan.dir)}</code>`) : ""}
       ${row("Services", services)}
       ${row("Installer", installer)}
